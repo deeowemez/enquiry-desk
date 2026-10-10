@@ -1,6 +1,6 @@
 # Enquiry Desk — state
 
-**Last updated:** 2026-10-11 · **session 2 done** — good stopping point once the checklist below is ticked
+**Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
 **Next session:** session 3 — the **failure path** (write-first intake + error workflow + Telegram alert)
 
 ## Status
@@ -16,18 +16,17 @@ Routing, the second gate, a one-question clarify reply and a claim validator are
 stored in `reply` (blocked ones with the reason). **Nothing is sent to customers.** The one action "miss"
 is t06 → `blocked`: the draft calculated a £190 bundle and the validator stopped it.
 
-Commits: Gemini version `9f383b3` · Nova move `2575bd4` · Switch `07d1120` · *(session 2 rest: not yet)*
+Commits: Gemini version `9f383b3` · Nova move `2575bd4` · Switch `07d1120` · session 2 done `672b806`
 
-## ✅ Before you stop (must do)
+## Before you stop
 
 | # | Step | Why |
 |---|---|---|
-| 1 | **Publish** in n8n (draft differs from live by Tidy-up positions only) | Editor and live in step |
-| 2 | **Export** → `workflows/01-intake.mine.json`, ask the agent to scan | Gate 2, clarify, validator and `reply` writes are **not in git** — the last export (00:05) predates them |
-| 3 | **Commit** export + `STATE.md` + `test/score.py` + 2 result files (not `test/test.json`) | `score.py` now ignores blocked replies — uncommitted |
+| 1–3 | ✅ Published, exported, scanned clean, committed + pushed (`672b806`) | — |
 | 4 | **A7 credit check** — Cost Explorer, group by Service, charge type Usage + Credit, 2026-10-10 | Confirms "credits only" really holds (~$0.15 of Bedrock offset by a Credit line) |
 
-Not blocking: t22's invented policy (see *Open issues*) — a known, documented gap.
+Not blocking: t22's invented policy (see *Open issues*). Cosmetic: the `action = clarify` note and
+sticky ② still describe the old design — tidy when convenient.
 
 ## How it flows (2026-10-11)
 

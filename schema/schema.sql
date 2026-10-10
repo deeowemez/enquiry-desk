@@ -56,3 +56,11 @@ create index on enquiry (status, received_at);
 create index on enquiry (n8n_execution_id);
 create index on followup (due_at) where sent_at is null and not cancelled;
 create index on run_log (enquiry_id, at);
+
+-- Dead-letter queue: enquiries whose run failed. test/replay.py re-posts these.
+create or replace view dead_letter as
+select e.id, e.received_at, e.from_email, e.subject, e.body, e.n8n_execution_id,
+       (select l.stage || ': ' || coalesce(l.error, '') from run_log l
+         where l.enquiry_id = e.id and l.status = 'failed' order by l.at desc limit 1) as last_error
+from enquiry e
+where e.status = 'failed';

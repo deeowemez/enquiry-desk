@@ -132,3 +132,24 @@ Session 1 only. Deliberately absent:
 
 Build sessions 2 and 3 by hand following the guide. The branching logic is where the learning is,
 and hand-written Switch nodes are much less error-prone than imported ones.
+
+---
+
+# Importing `01-errors.json` (the failure path, session 3)
+
+The intake workflow writes every enquiry to Postgres first (`record received`). If a production run
+then fails, this workflow marks the row `failed` (the `dead_letter` view), logs it in `run_log` and
+sends a Telegram alert with **no customer data** in it.
+
+1. **Import** `01-errors.json` the same way as above.
+2. **Credentials:** `mark failed` and `log failure` use your Postgres credential; `telegram alert` needs
+   a **Telegram API** credential (bot token from @BotFather → `/newbot`). Open the bot and press *Start*.
+3. **Chat ID:** the committed file has the placeholder `{{ALERT_CHAT_ID}}` in `telegram alert` →
+   *Chat ID*. Replace it with your numeric chat ID (ask **@userinfobot**). The real value lives in this
+   repo's `.env` as `ALERT_CHAT_ID` (gitignored) — keep it out of committed files.
+4. **Publish** this workflow, then open the intake workflow → **Settings** → **Error workflow** →
+   `01 Enquiry Desk - errors` → Save → Publish.
+5. **Test through the webhook**, not *Execute workflow* — the Error Trigger only fires for production
+   runs. A POST with no `email` field fails in `normalise` and should produce an alert within seconds.
+
+The `dead_letter` view comes from `schema/schema.sql`.

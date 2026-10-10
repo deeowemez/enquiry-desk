@@ -1173,7 +1173,8 @@
     "executionOrder": "v1",
     "binaryMode": "separate",
     "availableInMCP": false,
-    "saveDataSuccessExecution": "all"
+    "saveDataSuccessExecution": "all",
+    "errorWorkflow": "BSmcb09mPBarqPjO"
   },
   "versionId": "7419d8ff-0699-4032-8736-06a975a8d5c8",
   "meta": {

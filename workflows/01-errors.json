@@ -1,0 +1,196 @@
+{
+  "name": "01 Enquiry Desk - errors",
+  "nodes": [
+    {
+      "id": "err-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {},
+      "notes": "Fires when 01 Enquiry Desk - intake fails in PRODUCTION (not manual test runs)"
+    },
+    {
+      "id": "err-read",
+      "name": "read error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "notes": "Pull out what we need from the Error Trigger payload",
+      "parameters": {
+        "jsCode": "// Error Trigger payload: { execution: { id, url, lastNodeExecuted, error, mode }, workflow: { id, name } }\nconst e = $json.execution ?? {};\nreturn [{ json: {\n  execution_id: String(e.id ?? ''),\n  execution_url: e.url ?? '',\n  failed_node: e.lastNodeExecuted ?? e.error?.node?.name ?? 'unknown',\n  error_message: String(e.error?.message ?? 'unknown error').slice(0, 500),\n  workflow_name: $json.workflow?.name ?? ''\n}}];"
+      }
+    },
+    {
+      "id": "err-mark",
+      "name": "mark failed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        0
+      ],
+      "notes": "Find the row by execution id -> status failed (= dead letter). A processed row is left alone",
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update enquiry set status = 'failed'\n where n8n_execution_id = $1 and status <> 'processed'\nreturning id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.execution_id ] }}"
+        }
+      }
+    },
+    {
+      "id": "err-build",
+      "name": "build alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "notes": "No row = failed before intake (e.g. invalid email). Alert carries NO customer data - only the enquiry id",
+      "parameters": {
+        "jsCode": "// `mark failed` returns { id } when it marked a row. With no matching row (the run died before\n// `record received`, e.g. an invalid email) Postgres outputs { success: true } instead - check.\nconst err = $('read error').first().json;\nconst row = $input.first()?.json ?? {};\nconst enquiryId = row.id ?? '';\n\n// No customer data in the alert (it leaves our systems via Telegram) - just the id to look up.\nconst lines = [\n  '🚨 Enquiry Desk — run failed',\n  'Node: ' + err.failed_node,\n  'Error: ' + err.error_message,\n  enquiryId\n    ? 'Enquiry: ' + enquiryId + '\\nStatus → failed (dead_letter). Replay: python3 test/replay.py'\n    : 'No enquiry row — it failed before intake (nothing to replay).',\n  err.execution_url ? 'Execution: ' + err.execution_url : 'Execution id: ' + err.execution_id\n];\nreturn [{ json: { ...err, enquiry_id: enquiryId, text: lines.join('\\n') } }];"
+      }
+    },
+    {
+      "id": "err-log",
+      "name": "log failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        896,
+        0
+      ],
+      "notes": "run_log row: stage = the node that failed, status failed, error text",
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into run_log (enquiry_id, stage, status, attempt, error)\nvalues (nullif($1::text, '')::uuid, $2::text, 'failed', 1, $3::text);",
+        "options": {
+          "queryReplacement": "={{ [ $json.enquiry_id, $json.failed_node, $json.error_message ] }}"
+        }
+      }
+    },
+    {
+      "id": "err-alert",
+      "name": "telegram alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1120,
+        0
+      ],
+      "notes": "Bot token in n8n Credentials only",
+      "credentials": {
+        "telegramApi": {
+          "id": "f0NSkRcTr0rBgguW",
+          "name": "Telegram - alerts bot"
+        }
+      },
+      "parameters": {
+        "chatId": "{{ALERT_CHAT_ID}}",
+        "text": "={{ $('build alert').first().json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "webhookId": "8f5e7043-8a41-4610-937a-a93e6a941fd7"
+    },
+    {
+      "id": "err-note",
+      "name": "Note errors",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -260
+      ],
+      "parameters": {
+        "content": "## Enquiry Desk — failure path\n\nSet as the **Error workflow** of `01 Enquiry Desk - intake`. When a production run fails:\n1. the enquiry's row (written first by `record received`) is marked **failed** — that's the dead-letter queue (`select * from dead_letter`)\n2. a `run_log` row records the failing node and error\n3. a Telegram alert goes out — **no customer data**, just the enquiry id\n\nReplay with `python3 test/replay.py`. Manual test runs do NOT trigger this — test through the webhook.",
+        "height": 220,
+        "width": 760,
+        "color": 3
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "read error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read error": {
+      "main": [
+        [
+          {
+            "node": "mark failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "mark failed": {
+      "main": [
+        [
+          {
+            "node": "build alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "build alert": {
+      "main": [
+        [
+          {
+            "node": "log failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "log failure": {
+      "main": [
+        [
+          {
+            "node": "telegram alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all"
+  },
+  "id": "BSmcb09mPBarqPjO"
+}

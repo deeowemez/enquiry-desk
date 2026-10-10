@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Session 3 in progress:** ✅ A write-first intake · next **B** error workflow + Telegram → C replay → D chaos test
+**Session 3 in progress:** ✅ A write-first intake · ✅ B error workflow + Telegram · next **C** replay → D chaos test
 
 ## Status
 
@@ -24,7 +24,7 @@ Commits: Gemini version `9f383b3` · Nova move `2575bd4` · Switch `07d1120` · 
 |---|---|---|
 | 1–3 | ✅ Published, exported, scanned clean, committed + pushed (`672b806`) | — |
 | 4 | **A7 credit check** — Cost Explorer, group by Service, charge type Usage + Credit, 2026-10-10 | Confirms "credits only" really holds (~$0.15 of Bedrock offset by a Credit line) |
-| 5 | ✅ **Telegram bot** — `Telegram - alerts bot` credential + chat ID `8922045686` | Needed for the alert |
+| 5 | ✅ **Telegram bot** — `Telegram - alerts bot` credential + chat ID (in `.env` as `ALERT_CHAT_ID`) | Needed for the alert |
 
 Not blocking: t22's invented policy (see *Open issues*). Cosmetic: the `action = clarify` note and
 sticky ② still describe the old design — tidy when convenient.
@@ -66,7 +66,7 @@ flowchart TB
     P[prepare row] --> IE[(update enquiry<br/>status = processed)] --> RL[(insert<br/>run_log)] --> RP[(insert<br/>reply)]
   end
 
-  X[/"NOT BUILT YET: error workflow<br/>row stays received · no alert"/]
+  X[/"01 Enquiry Desk - errors<br/>mark failed → run_log → Telegram"/]
 
   F --> BC
   D --> R
@@ -88,7 +88,7 @@ flowchart TB
   classDef code fill:#dbeafe,stroke:#2563eb,color:#000
   classDef db fill:#dcfce7,stroke:#16a34a,color:#000
   classDef act fill:#f3e8ff,stroke:#7c3aed,color:#000
-  classDef gap fill:#fee2e2,stroke:#dc2626,color:#000,stroke-dasharray:5 5
+  classDef gap fill:#fee2e2,stroke:#dc2626,color:#000
   class C,DR,CL model
   class D,R,G,V,RQ,EN code
   class RR,IE,RL,RP db
@@ -97,7 +97,8 @@ flowchart TB
 ```
 
 **Reading it:** orange = model calls (the only paid, non-deterministic steps) · blue = code that
-*decides or checks* · purple = outcomes · green = Postgres · **red dashed = the gap session 3 closes.**
+*decides or checks* · purple = outcomes · green = Postgres · **red = the errors workflow** (any production
+failure; dotted arrows show the typical ones).
 Route escalations get no AI draft; everything a model writes passes through code before it's stored.
 
 ## Session 3 plan — the failure path
@@ -113,7 +114,7 @@ Pi — open its session 3 section and cite its trap numbers where they apply.
 ### 0 · Before the session (you, ~10 min)
 
 - [x] **Telegram bot** (2026-10-11): credential **`Telegram - alerts bot`** (`telegramApi`, id `f0NSkRcTr0rBgguW`)
-      in n8n; alert chat ID **`8922045686`** (goes in the errors workflow's Set node as `alert_chat_id`).
+      in n8n; alert chat ID kept in **`.env` as `ALERT_CHAT_ID`** (gitignored) — never in committed files.
 - [ ] **A7 credit check** in Cost Explorer (still open).
 
 ### A · Write first, enrich later ✅ done 2026-10-11 (agent, on request)
@@ -138,7 +139,7 @@ Reclaim: a `failed` row re-POSTed keeps its id, gets a new execution id, ends `p
   `envelope` (no id ⇒ return `[]`); 3 orphan `run_log` rows from that test deleted.
 - Also removed the throwaway Telegram test node (`Send a text message`) left in the workflow.
 
-### B · Error workflow + Telegram alert (~45 min)
+### B · Error workflow + Telegram alert ✅ done 2026-10-11 (agent, on request)
 
 | Step | Change |
 |---|---|
@@ -152,6 +153,20 @@ Trap to expect: the Error Trigger fires for **production** executions, not manua
 — test through the webhook.
 
 **Done when:** a forced failure produces a `failed` row, a failed `run_log` row and a Telegram message.
+
+**Result:** workflow **`01 Enquiry Desk - errors`** (id `BSmcb09mPBarqPjO`, published, exported to
+`workflows/01-errors.json`): `Error Trigger` → `read error` → `mark failed` → `build alert` → `log failure`
+→ `telegram alert`. Set as the intake workflow's *Error workflow*. `dead_letter` view created (+ `schema.sql`).
+- **Tested (pre-intake path):** POST with no email → `normalise` throws → errors run 484 → `run_log` failed
+  row (stage `normalise`) → Telegram alert received ("No enquiry row — failed before intake").
+- **Row path** (`mark failed` → `dead_letter`) is proven by the chaos test in D.
+- `mark failed` skips `processed` rows (a failure in `insert reply` after `update enquiry` doesn't re-queue it).
+- **The alert carries no customer data** — only node, error, enquiry id and execution link. Details stay in Postgres.
+- **Chat ID stays out of git:** live n8n has the real ID; the committed `01-errors.json` has `{{ALERT_CHAT_ID}}`
+  (value in `.env`, see `workflows/IMPORT.md`). Chosen over `$env` because `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`
+  would let every workflow read the encryption key and DB password. **Every export of the errors workflow
+  must be re-placeholdered before commit** (the agent's scan does it).
+- `build alert` handles "no row matched" explicitly — Postgres returns `{success: true}`, not nothing.
 
 ### C · Replay (~20 min)
 
@@ -221,9 +236,10 @@ lessons of the session). The agent reviews and runs the chaos test.
 | Write: auto_send | `select facts` → `build draft request` → `draft` → `read draft` → `answerable?` → (`validate claims` \| `action = escalate (gate 2)`) |
 | Write: clarify | `build clarify request` → `clarify` → `read clarify` → `validate claims` |
 | Record | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` |
+| **Errors workflow** | `Error Trigger` → `read error` → `mark failed` → `build alert` → `log failure` → `telegram alert` |
 
 Credentials (n8n only): `Bedrock - API key` (Header Auth, `Bearer …`), `Postgres account`,
-`Telegram - alerts bot` (session 3 alerts; chat ID `8922045686`).
+`Telegram - alerts bot` (session 3 alerts). Chat ID: `ALERT_CHAT_ID` in `.env`.
 Settings: save successful production executions = all.
 
 ## Results history
@@ -273,6 +289,8 @@ Export ritual: **reload the n8n tab** if the agent edited the workflow → **unp
 - **"Active" is now "Publish"** (n8n 2.x). Save edits the draft; production runs the published version.
   n8n-mcp edits land in both; a UI save (e.g. Tidy up) leaves draft ≠ live until you Publish.
 - **The webhook answers 200 before the workflow runs** — a throw still returns 200.
+- **Error Trigger** fires only for **production** runs (webhook), not manual *Execute workflow*. Its payload:
+  `execution.{id, url, lastNodeExecuted, error.message}` — `url` is a direct link to the failed run.
 - **`on conflict … do update … where <cond>`** returns the row only when the update happens — that's how
   `record received` reclaims a `failed` row but treats anything else as a duplicate.
 - **Postgres `queryReplacement` as a comma list splits values with commas** → use `={{ [ … ] }}`.

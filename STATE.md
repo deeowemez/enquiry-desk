@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Session 3 done:** ✅ A write-first · ✅ B errors + Telegram · ✅ C replay · ✅ D chaos test · ✅ E responses, notes, Loom outline · next: **session 4**
+**Session 3 done** + ✅ **free-text claims check** (verifier model + availability backstop) · next: **session 4**
 
 ## Status
 
@@ -57,10 +57,11 @@ flowchart TB
   subgraph S4["④ WRITE"]
     direction LR
     SF[select facts] --> BD[build draft<br/>request] --> DR{{draft<br/>Nova · write_reply}} --> RD[read draft] --> G{answerable?}
+    VB[build verify<br/>request] --> VF{{verify<br/>Nova · record_check}} --> VR[read verify]
     BQ[build clarify<br/>request] --> CL{{clarify<br/>Nova}} --> RQ[read clarify<br/>one-? check]
   end
 
-  V[validate claims<br/>prices · % · times · dates]
+  V[validate claims<br/>numbers · availability<br/>+ verifier's claims]
   E2[action = escalate<br/>gate 2]
 
   subgraph S5["⑤ RECORD"]
@@ -77,7 +78,8 @@ flowchart TB
   R -- "⑤ fallback" --> A
   A --> SF
   Q --> BQ
-  G -- "yes" --> V
+  G -- "yes" --> VB
+  VR --> V
   G -- "no" --> E2
   RQ --> V
   V -- "ok · or blocked" --> P
@@ -91,8 +93,8 @@ flowchart TB
   classDef db fill:#dcfce7,stroke:#16a34a,color:#000
   classDef act fill:#f3e8ff,stroke:#7c3aed,color:#000
   classDef gap fill:#fee2e2,stroke:#dc2626,color:#000
-  class C,DR,CL model
-  class D,R,G,V,RQ,EN,VE,DU code
+  class C,DR,CL,VF model
+  class D,R,G,V,RQ,EN,VE,DU,VR code
   class RR,IE,RL,RP db
   class E,Q,A,E2 act
   class X gap
@@ -276,15 +278,27 @@ lessons of the session). The agent reviews and runs the chaos test.
 7. **Claim validator** (pure code): every price, %, time and date in a reply must be in the fact table
    (lesson times converted to UTC/UK allowed; unverified deadlines flagged by name). Fail ⇒ `blocked`.
 8. **`score.py`** counts invented prices only in **unblocked** replies (what would reach a customer).
+9. **Free-text claims check (2026-10-11):** after gate 2, a **second Nova call** (`build verify request` →
+   `verify` → `read verify`, temperature 0, forced tool `record_check`) lists every factual statement in the
+   reply with `supported` + quoted evidence. Any claim not `supported === true` — or no result — is a claim
+   problem; `validate claims` merges it with the regex checks ⇒ `blocked`. Plus a **deterministic
+   availability backstop** in `validate claims`: a sentence naming an *available* subject with availability
+   wording ("not available", "isn't part of", "unavailable"…) is blocked. Only auto_send drafts are verified.
+   - Built test-first in a throwaway workflow on 10 crafted replies (4 inventions, 6 correct incl. "we don't
+     offer X"): 6/7 → 8/10 → **10/10**, then 9/10 on a re-run (variance) → added the code backstop.
+     The backstop flags **0 of 76** past unblocked replies (no false positives).
+   - Lessons on the way: the "saying it's NOT offered is supported" rule over-generalised to things the facts
+     *do* cover; the model **misread nested JSON** (Physics' `available: false` as Biology's) until facts were
+     rendered as **plain lines** and it had to **quote** the line it used.
 
-## Node map (39 incl. sticky notes)
+## Node map (42 incl. sticky notes)
 
 | Stage | Nodes |
 |---|---|
 | Intake | `Webhook` → `normalise` → `valid email?` (no → `respond 400`) → `record received` → `envelope` → `duplicate?` (yes → `respond duplicate`) → `respond 202` → `config` → `facts` |
 | Understand | `build classify request` → `classify` → `parse classification` → `derive missing slots` |
 | Route | `route` → `action = escalate` / `action = clarify` / `action = auto_send` |
-| Write: auto_send | `select facts` → `build draft request` → `draft` → `read draft` → `answerable?` → (`validate claims` \| `action = escalate (gate 2)`) |
+| Write: auto_send | `select facts` → `build draft request` → `draft` → `read draft` → `answerable?` → (`build verify request` → `verify` → `read verify` → `validate claims` \| `action = escalate (gate 2)`) |
 | Write: clarify | `build clarify request` → `clarify` → `read clarify` → `validate claims` |
 | Record | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` |
 | **Errors workflow** | `Error Trigger` → `read error` → `mark failed` → `build alert` → `log failure` → `telegram alert` |
@@ -307,6 +321,7 @@ Settings: save successful production executions = all.
 | `20261011-010552` | 22/24 | 6/6 | 6/6 | 22/24 | 0/13 | $0.00123 | **Write-first intake.** t22 now defers (good) → escalate |
 | `20261011-014710` | 22/24 | 6/6 | 6/6 | 21/24 | 0/12 | $0.00123 | After chaos test. **t01 escalates**: draft invents "trial is GCSE-only" (fact gap) |
 | `20261011-015701` | 22/24 | 6/6 | 6/6 | **22/24** | **0/13** | $0.00123 | `trial.applies_to` fact + draft temp 0 → t01 fixed. 400/202/200 responses; all 24 → 202 |
+| `20261011-021009` | 22/24 | 6/6 | 6/6 | 21/24 → **22/24** with t22 relabelled | 0/12 | $0.00172 | **Claims check.** Verifier **caught a real error**: t08 draft said GCSE Maths runs Sat + Sun (Sunday only) → blocked. Misses t06/t08/t22 all reach a human |
 
 Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs, not single cases.
 
@@ -319,8 +334,13 @@ Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs,
   the `facts` node: `trial.applies_to: every subject with available: true, in its scheduled slot`; consider
   draft `temperature: 0`. Re-score; t01 should auto_send again. Another case for the claims check (t22).
 
-- **Invented policies get through (t22):** "we offer flexibility, she can start mid-term in November" —
-  not in the facts; the validator only checks numbers. → *Next feature*, item 2.
+- ✅ **Invented free-text claims — closed 2026-10-11** by the verifier + availability backstop (Decision 9).
+  Residual risk: the verifier is a model (≈1 in 10 variance on the crafted set); the code backstop only
+  covers availability. Cost +40% (one more call per auto_send). Re-run the crafted set when prompts change.
+- **Labels vs protective outcomes:** ✅ **t22 relabelled → `escalate`** (2026-10-11): the mid-term question isn't
+  in the facts, so deferring is correct. t08 stays `auto_send` (a correct reply can auto-send; this run's
+  draft was wrong, so `blocked` was right but it still counts as a miss). `blocked` still ≠ `escalate` in
+  `score.py` — kept strict on purpose (t06).
 - **`blocked` vs `escalate` in `score.py`:** both reach a human; kept strict (t06 counts as a miss).
 - **t22's label** says `auto_send`, but deferring the mid-term question (→ escalate) is the better reply.
   Consider changing the label to `escalate` — the note already allows it.
@@ -366,6 +386,7 @@ Export ritual: **reload the n8n tab** if the agent edited the workflow → **unp
   one branch fires (Merge waits for all inputs).
 - **`{{ }}` in SQL is string pasting** → every value via `$1..$n`. After a Postgres node use
   `$('node').first()`.
+- **The public API's workflow PUT rejects `settings.binaryMode`** even though GET returns it — drop it.
 - **A Postgres node REPLACES the item with its result** (e.g. `{id}`) — re-attach the data you need
   (`envelope` does `$('normalise').all()`).
 - **A Postgres query returning 0 rows does NOT stop the run** — the node outputs `{success: true}` and
@@ -380,7 +401,11 @@ Export ritual: **reload the n8n tab** if the agent edited the workflow → **unp
   24/24 true). **A yes/no tied to a concrete check works** (`answerable` ≈ "did you have to say *I'll
   check*?") — but the wording decides it.
 - **Let models extract, let code decide** — extraction 24/24 vs judgement 2/6.
-- **A numeric validator can't catch invented policies** — needs claims tied to fact keys, or a judge.
+- **A numeric validator can't catch invented policies** → a **second model as verifier** (narrow job,
+  temperature 0, must quote its evidence) + **code backstops** for the claim types you can pattern-match.
+- **Render facts as plain lines for small models** — nested JSON with look-alike objects gets misread.
+- **Test a model step in isolation first:** a throwaway webhook workflow + crafted good/bad inputs gives a
+  pass/fail table in minutes; re-run it — one clean run isn't proof.
 - **Gemini free tier = 20 requests/day per model**; thinking made calls slow enough to time out.
 
 **AWS**

@@ -1,9 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "EnquiryClassification",
+  "description": "What the classifier model returns (via the forced record_classification tool). missing_slots is NOT here: the `derive missing slots` node computes it from `details` + a per-category rule table.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["category", "confidence", "language", "missing_slots", "safety_flags", "summary"],
+  "required": ["category", "confidence", "language", "details", "safety_flags", "summary"],
   "properties": {
     "category": {
       "type": "string",
@@ -16,17 +17,27 @@
         "access",
         "complaint_or_sensitive",
         "other"
-      ]
+      ],
+      "description": "trial_booking = wants to book or join a free trial. course_content = what a course or the free trial includes. complaint_or_sensitive = complaints, refunds or cancellations, outcome guarantees, or anything about a child's wellbeing. other = too vague to tell, a service we do not offer, or anything else."
     },
     "confidence": {
       "type": "number", "minimum": 0, "maximum": 1,
-      "description": "How sure you are of the category, 0 to 1."
+      "description": "How sure you are of the category, 0 to 1. Recorded for monitoring; NOT used for routing (uncalibrated)."
     },
     "language": { "type": "string", "description": "BCP-47 tag of the enquiry, e.g. \"en\", \"zh-HK\"." },
-    "missing_slots": {
-      "type": "array",
-      "items": { "type": "string", "enum": ["subject", "level", "timezone", "student_year"] },
-      "description": "Details we would NEED to answer this enquiry that the customer did NOT give, stated or clearly implied. A country or city counts as timezone; \"Year 12\" implies level and student_year. Empty array if nothing needed is missing."
+    "details": {
+      "type": "object",
+      "description": "What the customer stated or clearly implied. Never guess.",
+      "required": ["subject", "level", "timezone", "student_year"],
+      "properties": {
+        "subject": { "type": "string", "description": "Subject asked about, e.g. \"Biology\". \"\" if not stated." },
+        "level": {
+          "type": "string", "enum": ["GCSE", "A-Level", "unknown"],
+          "description": "Exam level if stated or part of the course name, e.g. \"A-Level Biology\". \"unknown\" otherwise."
+        },
+        "timezone": { "type": "string", "description": "Where the customer is (city or country) or their timezone. \"\" if not stated." },
+        "student_year": { "type": "string", "description": "School year if stated, e.g. \"Year 12\". \"\" if not stated." }
+      }
     },
     "safety_flags": {
       "type": "array",

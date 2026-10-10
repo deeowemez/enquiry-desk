@@ -24,7 +24,7 @@ Commits: Gemini version `9f383b3` · Nova move `2575bd4` · Switch `07d1120` · 
 |---|---|---|
 | 1–3 | ✅ Published, exported, scanned clean, committed + pushed (`672b806`) | — |
 | 4 | **A7 credit check** — Cost Explorer, group by Service, charge type Usage + Credit, 2026-10-10 | Confirms "credits only" really holds (~$0.15 of Bedrock offset by a Credit line) |
-| 5 | **Telegram bot** — token in n8n as `Telegram - alerts bot`, chat ID noted (session 3 step 0) | Needed for the alert |
+| 5 | ✅ **Telegram bot** — `Telegram - alerts bot` credential + chat ID `8922045686` | Needed for the alert |
 
 Not blocking: t22's invented policy (see *Open issues*). Cosmetic: the `action = clarify` note and
 sticky ② still describe the old design — tidy when convenient.
@@ -112,8 +112,8 @@ Pi — open its session 3 section and cite its trap numbers where they apply.
 
 ### 0 · Before the session (you, ~10 min)
 
-- [ ] **Telegram bot:** @BotFather → `/newbot` → token into n8n Credentials as **`Telegram - alerts bot`**
-      (Telegram API type). Press *Start* in the bot. Chat ID from **@userinfobot** — not secret, tell the agent.
+- [x] **Telegram bot** (2026-10-11): credential **`Telegram - alerts bot`** (`telegramApi`, id `f0NSkRcTr0rBgguW`)
+      in n8n; alert chat ID **`8922045686`** (goes in the errors workflow's Set node as `alert_chat_id`).
 - [ ] **A7 credit check** in Cost Explorer (still open).
 
 ### A · Write first, enrich later (~45 min)
@@ -212,7 +212,8 @@ lessons of the session). The agent reviews and runs the chaos test.
 | Write: clarify | `build clarify request` → `clarify` → `read clarify` → `validate claims` |
 | Record | `prepare row` → `insert enquiry` → `insert run_log` → `insert reply` |
 
-Credentials (n8n only): `Bedrock - API key` (Header Auth, `Bearer …`), `Postgres account`.
+Credentials (n8n only): `Bedrock - API key` (Header Auth, `Bearer …`), `Postgres account`,
+`Telegram - alerts bot` (session 3 alerts; chat ID `8922045686`).
 Settings: save successful production executions = all.
 
 ## Results history

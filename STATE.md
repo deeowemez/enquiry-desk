@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
-**Last updated:** 2026-10-10 · mid-session (switching model provider to Amazon Nova)
-**Next:** Nova setup → `config` node → Converse rewrite → baseline · plan below
+**Last updated:** 2026-10-10 · mid-session (workflow now runs on Nova 2 Lite)
+**Next:** export → baseline (all 24 on Nova) · plan below
 
 ## Status
 
@@ -13,7 +13,10 @@ baseline (48+ calls) can't fit in a day. **Decision: move to Amazon Nova 2 Lite 
 the AWS Free Tier credit ($99 left, expires 2027-03-09). **Rule: credits only** — no models billed
 to the card.
 
-**Not yet:** 24-case baseline. Injection fix. Session 2 Switch.
+**The workflow runs on Nova 2 Lite** (part B done by the agent, 2026-10-10). `t01` and `t18` pass
+end to end (~1.5 s per model call vs 30 s+ timeouts on Gemini). Gemini version is commit `9f383b3`.
+
+**Not yet:** workflow on Nova. 24-case baseline. Injection fix. Session 2 Switch.
 
 ## Done
 
@@ -35,6 +38,15 @@ to the card.
 - [x] 2026-10-10: `contact_email` removed from the `missing_slots` enum (node + `classification.schema.json`).
       The model only sees the body, so it always reported the email as missing → rule ④ would have
       sent every enquiry to *clarify*
+- [x] 2026-10-10: Bedrock set up: $5 budget alert (credits excluded), Nova 2 Lite via
+      `global.amazon.nova-2-lite-v1:0` in `ap-southeast-1`, n8n credential `Bedrock - API key`, smoke call passed
+- [x] 2026-10-10: stale browser tab reverted the API edits in the draft; re-applied, draft = published, re-exported
+- [x] 2026-10-10: **Rewired to Bedrock Converse** — new `config` Set node (URL, model, prices); classify
+      uses a **forced tool call** (`record_classification`) for structured JSON; parse/prepare read
+      `output.message.content[]` + `usage.inputTokens/outputTokens`; timeouts back to 30 s
+- [x] 2026-10-10: schema fields got `description`s (Nova over-reported `missing_slots` without them)
+- [x] 2026-10-10: `insert enquiry` passes values as an **array expression** — the comma list split
+      `["subject","timezone"]` into two params (`there is no parameter $12`)
 - [x] 2026-10-10: Raspberry Pi Connect on (remote shell only; the Pi is headless)
 
 ## Next — the plan
@@ -44,10 +56,10 @@ to the card.
 | Step | What | Done when |
 |---|---|---|
 | A1 | ✅ **Budget alert** `enquiry-desk-5usd`: $5/month, credits excluded, email at 80% actual (made with the CLI) | Done 2026-10-10 |
-| A2 | **Pick a region** and stay in it. Bedrock → **Cross-region inference**: copy the **inference profile ID** for Nova 2 Lite (e.g. `us.amazon.nova-2-lite-v1:0`, but use what the page shows) | Region + profile ID written below |
-| A3 | **Model access.** Enable Nova 2 Lite in that region if it isn't already | Status "Access granted" |
-| A4 | **API key.** Bedrock → **API keys** → long-term key, **90-day expiry**. Copy it once | Key copied (nowhere but n8n) |
-| A5 | **n8n credential.** Header Auth, Name `Authorization`, Value `Bearer <key>`, called `Bedrock - API key` | Credential saved |
+| A2 | ✅ **Pick a region** and stay in it. Bedrock → **Cross-region inference**: copy the **inference profile ID** for Nova 2 Lite (e.g. `us.amazon.nova-2-lite-v1:0`, but use what the page shows) | Region + profile ID written below |
+| A3 | ✅ **Model access.** Enable Nova 2 Lite in that region if it isn't already | Status "Access granted" |
+| A4 | ✅ **API key.** Bedrock → **API keys** → long-term key, **90-day expiry**. Copy it once | Key copied (nowhere but n8n) |
+| A5 | ✅ **n8n credential.** Header Auth, Name `Authorization`, Value `Bearer <key>`, called `Bedrock - API key` | Credential saved |
 | A6 | ✅ **Smoke call.** Throwaway HTTP Request node: POST `https://bedrock-runtime.<region>.amazonaws.com/model/<profile-id>/converse`, body `{"messages":[{"role":"user","content":[{"text":"Say OK"}]}]}` | 200 with `output.message.content[0].text` |
 | A7 | **Credit check.** After 24 h: Cost Explorer, group by Service, charge type Usage + Credit — Bedrock usage offset by a Credit line | Confirmed covered |
 
@@ -56,7 +68,7 @@ Endpoint: `https://bedrock-runtime.ap-southeast-1.amazonaws.com/model/global.ama
 Open: billing support case — does the Free Tier credit cover Claude on Bedrock?
 A6 status: ✅ passed 2026-10-10 — 200, "OK", 881 ms, 48 in / 12 out tokens (account verification cleared). A7 credit check due 2026-10-11
 
-### B. Rewire the workflow (~45 min, I build, agent reviews)
+### B. Rewire the workflow ✅ (done by the agent on request, 2026-10-10)
 
 1. **`config` Set node** right after `normalise`: `model_url`, `model_id`, `price_in_per_mtok`,
    `price_out_per_mtok`. Every later node reads from here, so swapping providers (Ollama later) means
@@ -113,6 +125,11 @@ A6 status: ✅ passed 2026-10-10 — 200, "OK", 881 ms, 48 in / 12 out tokens (a
 - **AWS credit applies to "Sold by: AWS" only.** Claude, Grok, GPT etc. on Bedrock are sold by the
   vendor through AWS Marketplace, so the Free Tier credit likely doesn't cover them. Nova is AWS's.
   The console's "Serverless" vs "Bedrock Marketplace" tabs are about hosting, not billing.
+- **n8n Postgres `queryReplacement` as a comma list splits values that contain commas.** Use
+  `={{ [ $json.a, $json.b ] }}`. Update `Execute a SQL query` the same way when you rename it.
+- **The Pi has two AWS CLI profiles.** `default` = account `017820696925` (not the Bedrock one);
+  Bedrock + budget live in `718339078322`. Check `aws sts get-caller-identity` or pass `--profile`.
+  Budget `enquiry-desk-5usd` confirmed in `718339078322` ($0.50 actual on 2026-10-10).
 - **Cross-region inference models need the profile ID** (`us.` / `eu.` / `apac.` / `global.` prefix),
   not the bare model ID.
 - **Re-running pinned data the same day writes nothing.** `external_key` = email + body + date;
@@ -126,7 +143,14 @@ A6 status: ✅ passed 2026-10-10 — 200, "OK", 881 ms, 48 in / 12 out tokens (a
 
 ## Open questions / blockers
 
-- Changes made via the API today (timeouts, email validation, enum) are **not exported to git yet**.
+- ✅ Nova prices set in `config`: $0.30 in / $2.50 out per MTok (Standard tier, 2026-10-10).
+- Nova still over-reports `missing_slots` on `t01` (`subject`, `level`) — see what the baseline says
+  before tuning.
+- `classification.schema.json` doesn't have the new field descriptions yet.
+
+- The Nova rewrite is **not exported yet** — reload the n8n tab, then export.
+- `.gitignore` now ignores `test/results/*` — decide: keep results in git as before/after evidence?
+- Scratch files `schema/test.sql`, `test/test.json` — keep out of commits or delete.
 - `Execute a SQL query` is still the default name for `insert run_log` — rename it.
 - The scorer can't check invented prices yet: replies aren't written to the `reply` table.
 - `score.py` doesn't count errors by type (503 / 429 / timeout) — read n8n Executions for now.

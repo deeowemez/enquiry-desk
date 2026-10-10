@@ -370,6 +370,12 @@
               "name": "llm_price_out_per_mtok",
               "value": 2.5,
               "type": "number"
+            },
+            {
+              "id": "cfg-review",
+              "name": "review_base_url",
+              "value": "https://raspberrypi.tailf7a7bf.ts.net/webhook/review",
+              "type": "string"
             }
           ]
         },
@@ -1024,6 +1030,147 @@
       ],
       "notesInFlow": true,
       "notes": "Any claim not supported === true -> a claim problem (no result = problem: a human looks)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "needs-review",
+              "leftValue": "={{ ['escalate', 'blocked'].includes($('prepare row').first().json.action) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ec09c924-4527-49d7-bf0e-ca6f5c6b7675",
+      "name": "needs review?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        1920
+      ],
+      "notesInFlow": true,
+      "notes": "escalate or blocked -> a person reviews it. auto_send and clarify don't"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update enquiry\n   set review_status = 'pending', review_token = replace(gen_random_uuid()::text, '-', ''), reviewed_at = null\n where id = $1::uuid\nreturning id, review_token;",
+        "options": {
+          "queryReplacement": "={{ [ $('prepare row').first().json.id ] }}"
+        }
+      },
+      "id": "87c19511-5d3e-4190-94bb-920c8fab609f",
+      "name": "open review",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1120,
+        1920
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "notes": "review_status = pending + a random review_token (the link's key)"
+    },
+    {
+      "parameters": {
+        "chatId": "{{ALERT_CHAT_ID}}",
+        "text": "={{ '🔎 <b>Enquiry needs review</b>\\nCategory: ' + $('prepare row').first().json.category + ' · action: <b>' + $('prepare row').first().json.action + '</b>\\n' + ($('prepare row').first().json.draft_reply ? 'A draft is ready — approve it or take over.' : 'No AI draft — a person writes this one.') }}",
+        "replyMarkup": "inlineKeyboard",
+        "inlineKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "buttons": [
+                  {
+                    "text": "Open review",
+                    "additionalFields": {
+                      "url": "={{ $('config').first().json.review_base_url + '?id=' + $json.id + '&t=' + $json.review_token }}"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "64e2c3dc-ccfa-4be1-a5dd-a9bbf64a6c2f",
+      "name": "review alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1568,
+        1920
+      ],
+      "notesInFlow": true,
+      "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad",
+      "credentials": {
+        "telegramApi": {
+          "id": "f0NSkRcTr0rBgguW",
+          "name": "Telegram - alerts bot"
+        }
+      },
+      "notes": "Category + action + Open review link. NO customer data in Telegram. Link works on the tailnet only"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "not-test-traffic",
+              "leftValue": "={{ !String($('prepare row').first().json.from_email).startsWith('test+') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "93f0401a-f863-48af-a909-adf8bfc73fb7",
+      "name": "notify a human?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        1920
+      ],
+      "notesInFlow": true,
+      "notes": "score.py traffic (test+...@example.com) still gets a review, but no Telegram message - the test suite must not page anyone"
     }
   ],
   "pinData": {},
@@ -1439,6 +1586,50 @@
           }
         ]
       ]
+    },
+    "insert reply": {
+      "main": [
+        [
+          {
+            "node": "needs review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "needs review?": {
+      "main": [
+        [
+          {
+            "node": "open review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "open review": {
+      "main": [
+        [
+          {
+            "node": "notify a human?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "notify a human?": {
+      "main": [
+        [
+          {
+            "node": "review alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -1449,7 +1640,7 @@
     "saveDataSuccessExecution": "all",
     "errorWorkflow": "BSmcb09mPBarqPjO"
   },
-  "versionId": "f3abf6e1-7cc9-44dc-9568-03a8092cc150",
+  "versionId": "55d498b6-0a67-405f-ae5b-87bfa352d174",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "79a6d2ca2cf0182b388c19c7c653ce5ad811e23004b52e0c272275de6898d98b"

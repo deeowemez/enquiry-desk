@@ -153,3 +153,22 @@ sends a Telegram alert with **no customer data** in it.
    runs. A POST with no `email` field fails in `normalise` and should produce an alert within seconds.
 
 The `dead_letter` view comes from `schema/schema.sql`.
+
+---
+
+# Importing `01-review.json` (human review, session 4)
+
+Escalated and blocked enquiries get `review_status = 'pending'` and a random `review_token`. The
+intake workflow's `review alert` sends a Telegram message (category + action only — **no customer
+data**) with an **Open review** link to this workflow's page.
+
+1. **Import** `01-review.json`. `load enquiry` and `apply decision` use your Postgres credential.
+2. **Publish** it. Endpoints: `GET /webhook/review?id=…&t=…` (read-only page) and
+   `POST /webhook/review-act` (the page's Approve / Take over buttons).
+3. In the intake workflow, set `config` → `review_base_url` to `https://<your-n8n>/webhook/review`, and
+   replace the `{{ALERT_CHAT_ID}}` placeholder in `review alert` → *Chat ID*.
+4. **Reachability:** the page is meant for your **tailnet only** (Tailscale Serve, not Funnel) — the phone
+   needs the Tailscale app connected. Telegram never fetches the link, so nothing needs to be public.
+5. Columns come from `schema/schema.sql` (`enquiry.review_status / review_token / reviewed_at`,
+   `reply.approved_at`). Approving sets `approved_at`; **nothing is emailed** (`sent_at` stays empty).
+6. `score.py` traffic (`test+…@example.com`) still opens a review but sends no Telegram message.

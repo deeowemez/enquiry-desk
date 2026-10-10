@@ -64,3 +64,13 @@ select e.id, e.received_at, e.from_email, e.subject, e.body, e.n8n_execution_id,
          where l.enquiry_id = e.id and l.status = 'failed' order by l.at desc limit 1) as last_error
 from enquiry e
 where e.status = 'failed';
+
+-- Human review (session 4). escalate / blocked enquiries get review_status = 'pending' and a random
+-- review_token; the review page (tailnet only) needs id + token. Approving a draft sets
+-- reply.approved_at; sent_at stays null until a real outbound channel exists.
+alter table enquiry add column if not exists review_status text
+  check (review_status in ('pending', 'approved', 'taken_over'));
+alter table enquiry add column if not exists review_token text;
+alter table enquiry add column if not exists reviewed_at timestamptz;
+alter table reply add column if not exists approved_at timestamptz;
+create index if not exists enquiry_review_pending_idx on enquiry (received_at) where review_status = 'pending';

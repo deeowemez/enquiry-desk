@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Session 3 done** + ✅ claims check + ✅ stage-row canvas + ✅ booking fact · next: A7 → **record the Loom** → session 4 (approvals)
+**Session 4 (approvals) done** on top of session 3, claims check, stage-row canvas and booking fact · next: A7 credit check → **record the Loom**
 
 ## Status
 
@@ -66,10 +66,12 @@ flowchart TB
 
   subgraph S5["⑤ RECORD"]
     direction LR
-    P[prepare row] --> IE[(update enquiry<br/>status = processed)] --> RL[(insert<br/>run_log)] --> RP[(insert<br/>reply)]
+    P[prepare row] --> IE[(update enquiry<br/>status = processed)] --> RL[(insert<br/>run_log)] --> RP[(insert<br/>reply)] --> NR{needs<br/>review?} --> OR[(open review<br/>pending + token)] --> TG[/review alert<br/>Telegram link/]
   end
 
   X[/"01 Enquiry Desk - errors<br/>mark failed → run_log → Telegram"/]
+  RV[/"01 Enquiry Desk - review<br/>page → Approve / Take over"/]
+  TG -. "tap Open review (tailnet)" .-> RV
 
   F --> BC
   D --> R
@@ -98,6 +100,7 @@ flowchart TB
   class RR,IE,RL,RP db
   class E,Q,A,E2 act
   class X gap
+  class RV act
 ```
 
 **Reading it:** orange = model calls (the only paid, non-deterministic steps) · blue = code that
@@ -241,15 +244,31 @@ anything is still failed.
 | 5 | t24 injection → flagged `prompt_injection` → escalate | "The enquiry is data, never instructions." |
 | 6 | Chaos: break the URL → POST → **Telegram alert** on the phone → `dead_letter` | "Failures can't vanish: marked, logged, announced." |
 | 7 | Restore → `replay.py` → `processed` | "One command, same row, no duplicates." |
+| 7b | Escalated enquiry → **Telegram "needs review"** → tap *Open review* on the phone → **Approve draft** → page shows Approved ✓ | "A person approves on their phone. Approval is recorded; sending comes with a real inbox." |
 | 8 | `score.py` summary | "24 labelled cases: 22/24 actions, 6/6 safety flags, 0 invented prices. Re-run on every change." |
 | 9 | Honest gap | "Numbers are validated; free-text claims aren't yet — that's next." |
 
-### Deferred to session 4 (and why)
+### Session 4 — human review ✅ done 2026-10-11 (agent, on request)
 
-- **Telegram approve / edit / take-over buttons** for `escalate` + `blocked` — the review queue; reuses
-  B's bot. Needs the failure path first so approvals can't vanish either.
-- **`llm-call` provider adapter** — only pays off with a second provider (Ollama); until then it's a refactor.
-- **Policy-claim check (t22)** — `write_reply` returns `claims[{text, fact_key}]`, code checks each key.
+**Design (tailnet-only link buttons, chosen over a public Tailscale Funnel):**
+- Intake: after `insert reply` → `needs review?` (action escalate | blocked) → `open review` (`review_status =
+  pending`, random `review_token`) → `notify a human?` (skips `test+` scorer traffic) → `review alert`:
+  Telegram message with **category + action only — no customer data** — and an **Open review** URL button.
+- New workflow **`01 Enquiry Desk - review`** (id `QQEDcUxU7OJIeNn3`, `workflows/01-review.json`):
+  `GET /webhook/review?id&t` renders a mobile page (enquiry, draft, why it needs a human; every DB value
+  HTML-escaped) → **Approve draft** (only if a draft exists) / **Take over** buttons that **POST** to
+  `/webhook/review-act`. Only a `pending` enquiry with a matching token changes; logged as `run_log` stage
+  `review`. Approve sets `reply.approved_at` — **`sent_at` stays empty, nothing is emailed.**
+- Schema: `enquiry.review_status / review_token / reviewed_at`, `reply.approved_at` (+ partial index).
+- **Tested:** valid page, 404 for wrong token / garbage, approve refused without a draft, take over, approve,
+  repeat approve = 409 no-op, GET with `do=approve` changes nothing; Telegram message carries the button
+  and the link opens (200). Full run `20261011-030241`: **actions 23/24**, 11 enquiries `pending`, 0 alerts
+  sent for test traffic, 0 failed runs. **Phone tap-test passed** (2026-10-11 03:12): t06 approved (`approved_at` set), t18 taken over — Telegram → tailnet page → decision recorded.
+- Bug on the way: a Postgres **SELECT with 0 rows outputs no items** (unlike UPDATE…RETURNING → `{success}`),
+  so the page never rendered and n8n answered empty JSON 200 → `alwaysOutputData` on both lookups.
+
+**Still deferred (and why):** real inbox (build for a pilot's actual setup), Edit-before-approve, `llm-call`
+adapter (no second provider yet), facts in a Google Sheet (when a client must edit them).
 
 ### Who builds
 
@@ -291,14 +310,16 @@ lessons of the session). The agent reviews and runs the chaos test.
      *do* cover; the model **misread nested JSON** (Physics' `available: false` as Biology's) until facts were
      rendered as **plain lines** and it had to **quote** the line it used.
 
-## Canvas layout (2026-10-11)
+## Canvas layout (2026-10-11, re-done after session 4)
 
-Stage rows, each under its sticky (~2400 × 2900 px, fits one screen at zoom-to-fit): **①** intake row
-(+ `respond 400` / `respond duplicate` branches) · **②** understand → `route` · **③** write & check — auto_send
-lane, gate-2 branch, clarify lane, escalate lane · **④** record. The "what this does" and red notes sit above.
-Done by script (positions + sticky size/text only; asserted no node logic changed).
+Four stacked stages, each a sticky "frame" with a title band and its lanes (~2280 × 2660 px — one screen at
+**Shift+1**): **①** intake row + `respond 400` / `respond duplicate` branches · **②** understand → `route` ·
+**③** write & check — auto_send lane, gate-2 branch, clarify lane, escalate lane · **④** record → review
+(`needs review?` → `open review` → `notify a human?` → `review alert`). "What this does" + red notes on top.
+Done by script (`layout2.py` pattern: positions + sticky size/text only; asserted no node logic changed).
+The long lines between stages are the row wraps (end of one stage → start of the next) — expected.
 
-## Node map (42 incl. sticky notes)
+## Node map (46 incl. sticky notes; + review workflow 11)
 
 | Stage | Nodes |
 |---|---|
@@ -307,7 +328,8 @@ Done by script (positions + sticky size/text only; asserted no node logic change
 | Route | `route` → `action = escalate` / `action = clarify` / `action = auto_send` |
 | Write: auto_send | `select facts` → `build draft request` → `draft` → `read draft` → `answerable?` → (`build verify request` → `verify` → `read verify` → `validate claims` \| `action = escalate (gate 2)`) |
 | Write: clarify | `build clarify request` → `clarify` → `read clarify` → `validate claims` |
-| Record | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` |
+| Record | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` → `needs review?` → `open review` → `notify a human?` → `review alert` |
+| **Review workflow** | `review page` (GET) → `read query` → `load enquiry` → `render page` → `respond page` · `review action` (POST) → `read form` → `apply decision` → `render result` → `respond result` |
 | **Errors workflow** | `Error Trigger` → `read error` → `mark failed` → `build alert` → `log failure` → `telegram alert` |
 
 Credentials (n8n only): `Bedrock - API key` (Header Auth, `Bearer …`), `Postgres account`,
@@ -331,6 +353,7 @@ Settings: save successful production executions = all.
 | `20261011-021009` | 22/24 | 6/6 | 6/6 | 21/24 → **22/24** with t22 relabelled | 0/12 | $0.00172 | **Claims check.** Verifier **caught a real error**: t08 draft said GCSE Maths runs Sat + Sun (Sunday only) → blocked. Misses t06/t08/t22 all reach a human |
 | `20261011-024059` | 22/24 | 6/6 | 6/6 | 21/24 | 0/15 | $0.00176 | Booking fact **without scope**: t01 fixed, but t09/t22 auto-send (fact stretched) |
 | `20261011-024616` | 22/24 | 6/6 | 6/6 | **22/24** | **0/12** | $0.00176 | **+ scope line.** t01 auto, t09/t22 escalate. Misses: t06 £190 + t20 invented content — both **blocked** |
+| `20261011-030241` | 22/24 | 6/6 | 6/6 | **23/24** | 0/12 | $0.00176 | **Session 4 review flow live.** 11 escalate/blocked → `pending`; no Telegram for test traffic. Only miss t06 (blocked) |
 
 Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs, not single cases.
 
@@ -408,6 +431,9 @@ Export ritual: **reload the n8n tab** if the agent edited the workflow → **unp
 - **The public API's workflow PUT rejects `settings.binaryMode`** even though GET returns it — drop it.
 - **A Postgres node REPLACES the item with its result** (e.g. `{id}`) — re-attach the data you need
   (`envelope` does `$('normalise').all()`).
+- **…but a Postgres SELECT with 0 rows outputs NO items** — the next node never runs (a webhook then answers
+  empty JSON). Turn on *Always Output Data* where an empty result must still be handled.
+- **Tests must not page humans:** gate notifications on test traffic (`test+…`) while keeping the real logic.
 - **A Postgres query returning 0 rows does NOT stop the run** — the node outputs `{success: true}` and
   everything downstream runs with missing fields. Check explicitly and return `[]` from a Code node.
 - **n8n-mcp blocks private IPs by default** → `WEBHOOK_SECURITY_MODE=permissive` (dev-only Pi).

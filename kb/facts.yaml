@@ -1,0 +1,72 @@
+# Meridian Tutors — fact table (FICTIONAL COMPANY, synthetic data)
+# The reply step may assert NOTHING that is not in this file.
+# If a customer asks something not covered here, the correct answer is
+# "I'll check and come back to you" + route to the human queue.
+
+company:
+  name: Meridian Tutors
+  fictional: true                 # keep this flag; the README must say so too
+  description: Online GCSE and A-Level tuition plus UK university admissions support
+  base_timezone: Europe/London
+  customer_timezones: [Asia/Hong_Kong, Asia/Singapore, Asia/Kuala_Lumpur]
+  contact_email: hello@meridiantutors.example
+
+support_hours:
+  days: Mon–Fri
+  open_utc: "09:00"
+  close_utc: "18:00"
+  # The whole reason this build exists:
+  note: >
+    Staffed from the UK. 09:00–18:00 UTC is 17:00–02:00 Hong Kong time, so the
+    entire Asian business day and school day is unstaffed.
+
+pricing:
+  currency: GBP
+  subscription_per_subject_per_month: 95
+  dropin_single_lesson: 25
+  trial:
+    price: 0
+    includes:
+      - One live lesson with a tutor
+      - Access to the past-paper bank
+      - One recorded topic module
+  discounts: []                   # deliberately empty — nothing to invent
+  refund_policy_summary: Handled case by case by a human. Never auto-answered.
+
+subjects:
+  - {id: bio_gcse,    name: Biology GCSE,      level: GCSE,    available: true}
+  - {id: chem_gcse,   name: Chemistry GCSE,    level: GCSE,    available: true}
+  - {id: maths_gcse,  name: Maths GCSE,        level: GCSE,    available: true}
+  - {id: bio_alevel,  name: Biology A-Level,   level: A-Level, available: true}
+  - {id: chem_alevel, name: Chemistry A-Level, level: A-Level, available: true}
+  - {id: phys_alevel, name: Physics A-Level,   level: A-Level, available: false}   # waitlist only
+
+admissions_support:
+  - {id: personal_statement, name: Personal statement review, included_in_subscription: false, price: 150}
+  - {id: interview_prep,     name: Admissions interview coaching, included_in_subscription: false, price: 200}
+  - {id: ucat_prep,          name: UCAT preparation course, included_in_subscription: false, price: 250}
+
+lesson_schedule:
+  timezone: Asia/Hong_Kong        # classes are advertised in HKT
+  slots:
+    - {subject: bio_alevel,  day: Saturday, start: "18:00", end: "19:30"}
+    - {subject: chem_alevel, day: Sunday,   start: "18:00", end: "19:30"}
+    - {subject: bio_gcse,    day: Saturday, start: "16:00", end: "17:00"}
+    - {subject: maths_gcse,  day: Sunday,   start: "16:00", end: "17:00"}
+
+deadlines:
+  - name: UCAS — medicine, dentistry, veterinary, and all Oxford/Cambridge courses
+    date: "2026-10-15"
+    time_uk: "18:00"
+    verified: true
+  - name: UCAS — equal consideration deadline, most other courses
+    date: "2027-01-14"
+    time_uk: "18:00"
+    verified: false               # TODO confirm before using in a real demo
+
+policies:
+  guarantees: none                # never imply an admissions outcome
+  minimum_age: 13
+  safeguarding: >
+    Anything touching a child's wellbeing, safety or welfare goes to a human.
+    Never auto-answered under any confidence score.

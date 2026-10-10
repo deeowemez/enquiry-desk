@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EnquiryClassification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["category", "confidence", "language", "missing_slots", "safety_flags", "summary"],
+  "properties": {
+    "category": {
+      "type": "string",
+      "enum": [
+        "trial_booking",
+        "pricing",
+        "scheduling",
+        "deadlines",
+        "course_content",
+        "access",
+        "complaint_or_sensitive",
+        "other"
+      ]
+    },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "language": { "type": "string", "description": "BCP-47 tag of the enquiry, e.g. en, zh-HK" },
+    "missing_slots": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["subject", "level", "timezone", "student_year", "contact_email"] }
+    },
+    "safety_flags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["child_wellbeing", "complaint", "refund_request", "guarantee_sought", "none"]
+      }
+    },
+    "summary": { "type": "string", "maxLength": 200 }
+  }
+}

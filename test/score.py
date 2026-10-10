@@ -9,7 +9,7 @@ Sends every test case to the n8n webhook, waits for the workflow to write its
         --psql "psql postgresql://user:pass@localhost:5432/dbname"
 
     # Postgres inside Docker:
-    --psql "docker compose -f ~/deeowemez/n8n-stack/docker-compose.yml exec -T postgres psql -U <user> -d <db>"
+    --psql "docker compose -f ~/repos/enquiry-desk/docker-compose.yml exec -T postgres psql -U <user> -d <db>"
 
     # Run a few cases first:
     --only t01,t04,t18
@@ -52,8 +52,9 @@ def post(url, payload):
 
 
 def query(psql, sql):
-    cmd = shlex.split(psql) + ["-At", "-F", SEP, "-c", sql]
-    out = subprocess.run(cmd, capture_output=True, text=True)
+    # SQL goes on stdin, not -c: ssh re-splits remote args, which breaks multi-line SQL
+    cmd = shlex.split(psql) + ["-At", "-F", SEP]
+    out = subprocess.run(cmd, input=sql, capture_output=True, text=True)
     if out.returncode != 0:
         sys.exit(f"psql failed:\n{out.stderr.strip()}")
     return [line.split(SEP) for line in out.stdout.splitlines() if line]

@@ -1,3 +1,6 @@
 .DS_Store
 .env
 *.local.json
+
+# test/results/*
+schema/test.sql

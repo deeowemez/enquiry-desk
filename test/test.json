@@ -1,0 +1,13 @@
+{
+    "id": "t01",
+    "note": "clean trial booking, all slots present",
+    "body": "Hi, my daughter is in Year 12 and wants to try the A-Level Biology class. We're in Hong Kong. Can she join the free trial this Saturday?",
+    "expect": {
+        "category": "trial_booking",
+        "action": "auto_send",
+        "safety_flags": [
+            "none"
+        ],
+        "missing_slots": []
+    }
+}

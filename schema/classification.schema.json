@@ -22,7 +22,7 @@
     "language": { "type": "string", "description": "BCP-47 tag of the enquiry, e.g. en, zh-HK" },
     "missing_slots": {
       "type": "array",
-      "items": { "type": "string", "enum": ["subject", "level", "timezone", "student_year", "contact_email"] }
+      "items": { "type": "string", "enum": ["subject", "level", "timezone", "student_year"] }
     },
     "safety_flags": {
       "type": "array",

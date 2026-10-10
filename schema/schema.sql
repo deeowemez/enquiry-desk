@@ -5,7 +5,7 @@ create table enquiry (
   source        text        not null check (source in ('form','email')),
   external_key  text        not null unique,     -- idempotency anchor
   received_at   timestamptz not null,
-  from_email    text,
+  from_email    text not null,
   subject       text,
   body          text        not null,
   category      text,

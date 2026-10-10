@@ -8,7 +8,7 @@
         "LOG_LEVEL": "error",
         "DISABLE_CONSOLE_OUTPUT": "true",
         "N8N_API_URL": "https://raspberrypi.tailf7a7bf.ts.net",
-        "N8N_API_KEY": "${N8N_API_KEY}",
+        "N8N_API_KEY": "${env:N8N_API_KEY}",
         "WEBHOOK_SECURITY_MODE": "permissive"
       }
     }

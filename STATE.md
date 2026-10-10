@@ -1,105 +1,88 @@
 # Enquiry Desk — state
 
-**Last updated:** 2026-10-07 · end of the session-1 build
-**Next session:** ~70 min (1 hour + n8n-mcp setup) · plan below
+**Last updated:** 2026-10-10 · mid-session (re-entry + n8n-mcp done)
+**Next:** smoke test → baseline → injection fix → `route` Switch · plan below
 
 ## Status
 
-**Session 1 (the spine): built and working.** A POST to the webhook produces one `enquiry` row and
-two `run_log` rows (`classify` + `draft`, model `gemini-3.8-flash`, cost $0). Classification of the
-test payload came back correct: `pricing`, confidence 0.98.
+**Session 1 (the spine): built, working, committed.** A POST to the webhook produces one `enquiry`
+row and two `run_log` rows (`classify` + `draft`, model `gemini-3.8-flash`, cost $0). First commit
+`a3d4cba Session 1 spine working`. Retries are on for both model calls.
 
-**Not yet:** scored against the 24 test cases, exported to git, or protected by retries.
+**n8n-mcp is connected.** The agent can list workflows and read executions directly — no more
+pasting outputs. Workflow ID: `9OtHm7FyRtNdUl1p` (`01 Enquiry Desk - intake`).
+
+**Not yet:** activated, or scored against the 24 test cases.
 
 ## Done
 
 - [x] `schema.sql` loaded into Postgres
 - [x] `NODE_FUNCTION_ALLOW_BUILTIN=crypto` set on the n8n container; `normalise` uses `crypto`
 - [x] Gemini credential (`x-goog-api-key`) and Postgres credential created
-- [x] Session 1 nodes, steps 2–12, built and passing **Test step**
-- [x] Step 13, `insert run_log`, written by me (parameterised, `.first()` references)
-- [x] `extractText` fixed in **both** `parse classification` and `prepare row` — reply lives in
-      `steps[]` → `model_output` → `content[].text`
+- [x] Session 1 nodes, steps 2–13, built and passing **Test step**
+- [x] `extractText` fixed in **both** `parse classification` and `prepare row`
 - [x] `tokens()` counts thinking tokens as output
-- [x] `test/score.py` written (scorer for the 24 cases) — **not yet run**
+- [x] `test/score.py` written — **not yet run**
+- [x] 2026-10-10: exported to `workflows/01-intake.mine.json`, scanned clean (no keys, no personal
+      data), stale `01-intake copy.json` deleted, first commit made
+- [x] 2026-10-10: n8n-mcp connected via `.mcp.json` (committed; key is a `${N8N_API_KEY}` reference)
+- [x] 2026-10-10: retries on `classify` and `draft` — 4 tries, 5000 ms, On Error = Stop (trap ① clear)
+- [x] 2026-10-10: `--psql` settled: `ssh rpi docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n`.
+      `score.py` now sends SQL on stdin (ssh re-splits `-c` args)
+- [x] 2026-10-10: Raspberry Pi Connect turned on (`rpi-connect on`, linger enabled). Remote shell
+      only — screen sharing needs a desktop session and the Pi is headless
 
-## Next session — the plan (~75 min)
-
-The original 1-hour plan, plus ~10 minutes to connect n8n-mcp (host already confirmed). Update this file in the last 5.
+## Next — the plan (~45 min)
 
 | Min | Step | Done when |
 |---|---|---|
-| 0–5 | **Re-enter + save.** Export my workflow from n8n (⋯ → Download) to `workflows/01-intake.mine.json`. Search it for `key`/`AIza` to confirm no secrets. First commit: `git add -A && git commit -m "Session 1 spine working"` | One commit exists |
-| 5–15 | **Connect n8n-mcp** so the agent can read workflows and executions directly. Steps in **n8n-mcp setup** below | `/mcp` shows `n8n-mcp` connected, and the agent can list my workflows |
-| 20–25 | **Retries on both model calls.** `classify` and `draft` → Settings → Retry On Fail **on**, Max Tries **4**, Wait **5000**, On Error **Stop Workflow** (trap ①: any "Continue" disables retries) | Both nodes set |
-| 25–30 | **Activate + smoke test.** Toggle the workflow active, copy the **Production** URL, run `python3 test/score.py --webhook <prod-url> --psql "<psql cmd>" --only t01,t04,t18` | 3 rows, no "no row" |
-| 30–40 | **Baseline run, all 24.** Same command without `--only` (~5 min at 6 s spacing). Write category accuracy + safety-flag score into **Baseline** below | Numbers recorded |
-| 40–50 | **Fix the injection gap.** Add `prompt_injection` to the `safety_flags` enum in `build classify request`, and tell the model to use it when the enquiry tries to give instructions. Re-run `--only t24` | `t24` flags `prompt_injection` |
-| 50–70 | **Start session 2: the `route` Switch** after `parse classification`. Five rules, in order: ① any flag except `none` → escalate · ② `complaint_or_sensitive` → escalate · ③ confidence < 0.75 → clarify · ④ missing slots → clarify · ⑤ fallback → auto_send. For now, each branch just sets an `action` field and all three rejoin before `insert enquiry`; add `action` to the insert | `t18` routes to escalate at high confidence |
-| 70–75 | **Close out.** Export again, commit, update this file | Committed |
+| 0–5 | **Settle the `--psql` command.** Postgres is in Docker on the Pi; `score.py` runs on the Mac. Find a command that opens psql on the right DB from the Mac (likely `ssh <pi> docker exec -i <pg-container> psql -U <user> -d <db>`). Test it with `-c 'select count(*) from enquiry'` | Returns a number |
+| 5–10 | **Activate + smoke test.** Toggle the workflow active, copy the **Production** URL (`/webhook/enquiry`, not `/webhook-test/`), run `python3 test/score.py --webhook <prod-url> --psql "<psql cmd>" --only t01,t04,t18` | 3 rows, no "no row" |
+| 10–20 | **Baseline, all 24.** Same command without `--only` (~5 min at 6 s spacing). Fill in **Baseline** below. Count the 503s | Numbers recorded |
+| 20–30 | **Fix the injection gap.** Add `prompt_injection` to the `safety_flags` enum in `build classify request`, and tell the model to use it when the enquiry tries to give instructions. Re-run `--only t24` | `t24` flags `prompt_injection` |
+| 30–50 | **Start session 2: the `route` Switch** after `parse classification`. Rules in order: ① any flag except `none` → escalate · ② `complaint_or_sensitive` → escalate · ③ confidence < 0.75 → clarify · ④ missing slots → clarify · ⑤ fallback → auto_send. Each branch sets `action`; all rejoin before `insert enquiry`; add `action` to the insert | `t18` routes to escalate at high confidence |
+| 50–55 | **Close out.** Unpin, export, scan, commit, update this file | Committed |
 
-**If you run short:** skip 50–70. The baseline numbers and the injection fix are worth more than a
+**If you run short:** skip the Switch. Baseline numbers + the injection fix are worth more than a
 half-built Switch.
 
-**If you finish early:** re-run all 24 with `action` now written — `score.py` will start scoring
-action accuracy automatically.
+## Before every export
 
-## n8n-mcp setup (the 5–15 step)
+1. **Unpin the Webhook node** — Tailscale Serve adds `tailscale-user-*` headers (real name, Google
+   login, avatar) to every request, and pinned data goes into the JSON. Unpinning the rest is
+   optional (synthetic only) but shrinks the file and stops manual runs replaying stale outputs.
+2. Save as `01-intake.mine.json` — the browser added a second `.json` last time.
+3. Ask the agent to scan it before `git add`.
 
-**1–2. Host and reachability — done.** n8n runs on the **Raspberry Pi**, served over Tailscale at
-**`https://raspberrypi.tailf7a7bf.ts.net`**. `curl -I` from the Mac returned `HTTP/2 200`
-(2026-10-10), so no SSH tunnel is needed — just keep Tailscale connected on the Mac.
+## Baseline
 
-**3. Prerequisite:** `npx --version` on the Mac. If missing, install Node first.
+| Run | Category acc. | Safety flags | Action acc. | 503s | Notes |
+|---|---|---|---|---|---|
+| 2026-10-__ baseline | _/24 | _/_ | n/a (session 1) | _ | |
 
-**4. API key:** n8n → **Settings → n8n API → Create an API key**. Copy it once; n8n won't show it again.
-
-**5. Register the server** (from `~/deeowemez/enquiry-desk`):
-```bash
-claude mcp add n8n-mcp \
-  -e MCP_MODE=stdio \
-  -e LOG_LEVEL=error \
-  -e DISABLE_CONSOLE_OUTPUT=true \
-  -e N8N_API_URL=https://raspberrypi.tailf7a7bf.ts.net \
-  -e N8N_API_KEY=<key from step 4> \
-  -- npx -y n8n-mcp
-```
-**Don't add `-s project`** — that writes the key into `.mcp.json`. (It's in `.gitignore` anyway,
-but keep the key in user config.)
-
-**6. Verify:** MCP servers load at session start, so start a **fresh** Claude Code session, run
-`/mcp`, then ask: *"list my n8n workflows and show the last execution of 01 Enquiry Desk — intake."*
-
-**What it changes:** the agent can read the workflow and execution errors itself — no more pasting
-outputs. It does **not** change rule 1 in `CLAUDE.md`: I still build the nodes. And edits made
-through the API still aren't in git, so the export step stays.
-
-## Baseline (fill in tomorrow)
-
-| Run | Category acc. | Safety flags | Action acc. | Notes |
-|---|---|---|---|---|
-| 2026-10-0_ baseline | _/24 | _/_ | n/a (session 1) | |
-
-## Things learned this session — don't relearn them
+## Things learned — don't relearn them
 
 - **Raw Gemini response:** reply is in `steps[]`, after an encrypted `thought` step. The SDKs hide
   this as `output_text`; over REST you walk it yourself.
 - **Thinking is the real cost.** One classification: ~730 thought tokens vs ~72 visible. Billed as
   output. Try `generation_config.thinking_level` low later — verify the allowed values first, and
   measure before/after with `score.py`.
-- **`503 high demand` is common on the free tier.** It's Google's capacity, not my build. Retries
-  absorb short spikes; `gemini-3.5-flash` / `3.7-flash` are free fallbacks if it persists. Count
-  the 503s during scoring — real numbers for the README.
+- **`503 high demand` is common on the free tier.** Google's capacity, not my build. Retries absorb
+  short spikes; `gemini-3.5-flash` / `3.7-flash` are free fallbacks.
 - **Re-running pinned data the same day writes nothing.** `external_key` = email + body + date, and
-  `on conflict do nothing` returns 0 rows, so `insert run_log` silently doesn't run. That's dedupe
-  working. `score.py` avoids it by using a unique email per case per run.
-- **After a Postgres node, use `$('node').first()`**, not `.item` — item pairing can break there.
+  `on conflict do nothing` returns 0 rows, so `insert run_log` silently doesn't run. Dedupe working.
+- **After a Postgres node, use `$('node').first()`**, not `.item`.
 - **`{{ }}` in SQL is string pasting, not parameters.** Every value goes through `$1..$n`.
+- **n8n-mcp blocks private IPs by default.** The Pi's Tailscale IP (`100.104.202.56`) is in
+  100.64/10, so `.mcp.json` needs `WEBHOOK_SECURITY_MODE=permissive`. Fine for a dev-only Pi.
+- **VS Code's Reload Window keeps the old environment.** A new `export` in `~/.zshrc` needs a full
+  quit (`Cmd+Q`) before MCP servers see it.
+- **Tailscale Serve injects identity headers** into every request. `normalise` drops them, so
+  Postgres is clean, but n8n execution history keeps them.
 
 ## Open questions / blockers
 
-- `workflows/01-intake copy.json` — stale older answer key. Delete it.
-- n8n-mcp not connected — **planned for the next session** (5–15). Host confirmed.
+- `Execute a SQL query` is still the default name for `insert run_log` — rename it.
 - The scorer can't check invented prices yet: replies aren't written to the `reply` table. Comes
   with the session 2 validator.
 

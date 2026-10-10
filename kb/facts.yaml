@@ -26,6 +26,7 @@ pricing:
   dropin_single_lesson: 25
   trial:
     price: 0
+    applies_to: Any subject marked available true, taken in that subject's scheduled lesson slot.
     includes:
       - One live lesson with a tutor
       - Access to the past-paper bank

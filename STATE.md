@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Session 3 core done:** ✅ A write-first · ✅ B error workflow + Telegram · ✅ C replay · ✅ D chaos test · next: E stretch / t01 fact gap
+**Session 3 done:** ✅ A write-first · ✅ B errors + Telegram · ✅ C replay · ✅ D chaos test · ✅ E responses, notes, Loom outline · next: **session 4**
 
 ## Status
 
@@ -35,7 +35,9 @@ sticky ② still describe the old design — tidy when convenient.
 flowchart TB
   subgraph S1["① INTAKE"]
     direction LR
-    W([Webhook<br/>POST /enquiry]) --> N[normalise<br/>envelope + email check] --> RR[(record received<br/>status = received)] --> EN[envelope<br/>duplicate? stop] --> CFG[config<br/>URL · model · prices] --> F[facts]
+    W([Webhook<br/>POST /enquiry]) --> N[normalise] --> VE{valid<br/>email?} --> RR[(record received<br/>status = received)] --> EN[envelope] --> DU{duplicate?} --> OK[respond 202<br/>+ id] --> CFG[config] --> F[facts]
+    VE -. no .-> R4[respond 400]
+    DU -. yes .-> R2[respond 200<br/>duplicate]
   end
 
   subgraph S2["② UNDERSTAND"]
@@ -90,7 +92,7 @@ flowchart TB
   classDef act fill:#f3e8ff,stroke:#7c3aed,color:#000
   classDef gap fill:#fee2e2,stroke:#dc2626,color:#000
   class C,DR,CL model
-  class D,R,G,V,RQ,EN code
+  class D,R,G,V,RQ,EN,VE,DU code
   class RR,IE,RL,RP db
   class E,Q,A,E2 act
   class X gap
@@ -206,13 +208,39 @@ anything is still failed.
 - Note: an **error in the errors workflow has no alert of its own** — that's why the Markdown bug was
   silent. Keep the alert path dumb and test it with a real failure after every change.
 
-### E · If time is left (stretch, in this order)
+### E · Stretch ✅ done 2026-10-11 (agent, on request)
 
 1. **Real 400 for bad input** — Webhook → *Respond: using 'Respond to Webhook' node*; invalid email → 400
    with a JSON error; valid → 202 `{id}` after `record received` (the customer gets a reference).
 2. **Tidy the stale notes** (`action = clarify`, sticky ②) and the red sticky.
 3. **Loom outline** (record in session 4): t18 escalates at 0.90 → t06's £190 blocked → chaos test alert →
    replay → `score.py` numbers.
+
+**Results:**
+- **t01 fact gap fixed:** `trial.applies_to: Any subject marked available true, taken in that subject's
+  scheduled lesson slot.` in `kb/facts.yaml` **and** the `facts` node; draft `temperature` 0.3 → 0.
+  t01 auto-sends again ("Yes, your daughter can join the free trial for A-Level Biology this Saturday").
+- **Real HTTP responses:** Webhook → *Respond: using Respond to Webhook node*. `normalise` no longer throws:
+  `valid email?` → **400** `{ok:false, error}` (nothing stored, **no alert** — bad input isn't a failure);
+  `duplicate?` → **200** `{status: duplicate}` (no model calls); otherwise **202** `{status: received, id}`
+  sent *after* the row is saved (0.4 s), then processing continues. 5 new nodes.
+- **Notes tidied:** `action = clarify`, stickies ①, ② and the red one (now "session 3 done").
+- **Re-score** `20261011-015701`: category 22/24, flags 6/6, **actions 22/24**, invented prices 0/13,
+  all 24 → HTTP 202. Misses: t06 (blocked — fine), t22 (defers — fine).
+
+### Loom outline (≈4 min, record in session 4)
+
+| # | Show | Say |
+|---|---|---|
+| 1 | The problem slide / main sticky | "UK-staffed tutoring company, customers in UTC+8: the whole Asian day is unstaffed." |
+| 2 | POST t01 → **202 + id** in 0.4 s → row `processed`, reply in `reply` | "Saved first, answered from a fact table, cost tracked: ~$0.001." |
+| 3 | t18 (child wellbeing, confidence 0.90) → **escalate**, no AI draft | "Safety flags beat confidence. A human writes this one." |
+| 4 | t06 → draft computes **£190** → `validate claims` **blocks** it | "The model invented a bundle price. Code caught it — no model can talk its way past a regex." |
+| 5 | t24 injection → flagged `prompt_injection` → escalate | "The enquiry is data, never instructions." |
+| 6 | Chaos: break the URL → POST → **Telegram alert** on the phone → `dead_letter` | "Failures can't vanish: marked, logged, announced." |
+| 7 | Restore → `replay.py` → `processed` | "One command, same row, no duplicates." |
+| 8 | `score.py` summary | "24 labelled cases: 22/24 actions, 6/6 safety flags, 0 invented prices. Re-run on every change." |
+| 9 | Honest gap | "Numbers are validated; free-text claims aren't yet — that's next." |
 
 ### Deferred to session 4 (and why)
 
@@ -249,11 +277,11 @@ lessons of the session). The agent reviews and runs the chaos test.
    (lesson times converted to UTC/UK allowed; unverified deadlines flagged by name). Fail ⇒ `blocked`.
 8. **`score.py`** counts invented prices only in **unblocked** replies (what would reach a customer).
 
-## Node map (34 incl. sticky notes)
+## Node map (39 incl. sticky notes)
 
 | Stage | Nodes |
 |---|---|
-| Intake | `Webhook` → `normalise` → `record received` → `envelope` → `config` → `facts` |
+| Intake | `Webhook` → `normalise` → `valid email?` (no → `respond 400`) → `record received` → `envelope` → `duplicate?` (yes → `respond duplicate`) → `respond 202` → `config` → `facts` |
 | Understand | `build classify request` → `classify` → `parse classification` → `derive missing slots` |
 | Route | `route` → `action = escalate` / `action = clarify` / `action = auto_send` |
 | Write: auto_send | `select facts` → `build draft request` → `draft` → `read draft` → `answerable?` → (`validate claims` \| `action = escalate (gate 2)`) |
@@ -278,12 +306,13 @@ Settings: save successful production executions = all.
 | `20261011-001555` | 22/24 | 6/6 | 6/6 | **23/24** | **0/14** | $0.00122 | "Not offered = answered" wording |
 | `20261011-010552` | 22/24 | 6/6 | 6/6 | 22/24 | 0/13 | $0.00123 | **Write-first intake.** t22 now defers (good) → escalate |
 | `20261011-014710` | 22/24 | 6/6 | 6/6 | 21/24 | 0/12 | $0.00123 | After chaos test. **t01 escalates**: draft invents "trial is GCSE-only" (fact gap) |
+| `20261011-015701` | 22/24 | 6/6 | 6/6 | **22/24** | **0/13** | $0.00123 | `trial.applies_to` fact + draft temp 0 → t01 fixed. 400/202/200 responses; all 24 → 202 |
 
 Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs, not single cases.
 
 ## Open issues
 
-- **t01 fact gap (new, 2026-10-11):** the facts never say *which subjects the free trial covers*. In 3 runs the
+- ✅ **t01 fact gap — fixed 2026-10-11** (see session 3 E). Kept for the record: the facts never say *which subjects the free trial covers*. In 3 runs the
   draft said "yes, A-Level Biology this Saturday"; in the last 2 it **invented a restriction** ("the trial only
   includes GCSE subjects…" / "A-Level Biology isn't available") and gate 2 escalated it — so no wrong answer
   would reach a customer, but a good enquiry lost its auto-reply. **Fix (next):** add to `kb/facts.yaml` *and*
@@ -321,7 +350,10 @@ Export ritual: **reload the n8n tab** if the agent edited the workflow → **unp
   **Reload after every agent edit; never Save in an old tab.**
 - **"Active" is now "Publish"** (n8n 2.x). Save edits the draft; production runs the published version.
   n8n-mcp edits land in both; a UI save (e.g. Tidy up) leaves draft ≠ live until you Publish.
-- **The webhook answers 200 before the workflow runs** — a throw still returns 200.
+- **Default webhook mode answers 200 before the workflow runs** — a throw still returns 200. Use
+  *Respond: using 'Respond to Webhook' node*; answer **after** the enquiry is saved (202 + id), and keep
+  processing after the Respond node — the caller doesn't wait for the model calls.
+- **Bad input ≠ failure:** validate and return 400 instead of throwing, or every typo pages you on Telegram.
 - **The Telegram node sends Markdown by default** — an `_` (e.g. `dead_letter`) or `*` in the text breaks it
   (400 "can't parse entities"). Use `parse_mode: HTML` and escape `& < >`.
 - **Nothing alerts on a failure inside the error workflow itself** — test it with a real failure after changes.

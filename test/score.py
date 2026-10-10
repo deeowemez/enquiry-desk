@@ -65,8 +65,9 @@ def fetch(psql, email):
     sql = f"""
       select e.category, e.confidence, e.language,
              e.safety_flags::text, e.missing_slots::text, coalesce(e.action, ''),
+             -- only replies that would reach the customer: blocked ones never leave
              coalesce((select replace(r.body, E'\\n', ' ') from reply r
-                        where r.enquiry_id = e.id limit 1), ''),
+                        where r.enquiry_id = e.id and not r.blocked limit 1), ''),
              coalesce((select sum(cost_usd) from run_log l
                         where l.enquiry_id = e.id), 0)
       from enquiry e where e.from_email = '{email}'"""

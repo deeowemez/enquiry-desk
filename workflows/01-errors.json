@@ -62,7 +62,7 @@
       ],
       "notes": "No row = failed before intake (e.g. invalid email). Alert carries NO customer data - only the enquiry id",
       "parameters": {
-        "jsCode": "// `mark failed` returns { id } when it marked a row. With no matching row (the run died before\n// `record received`, e.g. an invalid email) Postgres outputs { success: true } instead - check.\nconst err = $('read error').first().json;\nconst row = $input.first()?.json ?? {};\nconst enquiryId = row.id ?? '';\n\n// No customer data in the alert (it leaves our systems via Telegram) - just the id to look up.\nconst lines = [\n  '🚨 Enquiry Desk — run failed',\n  'Node: ' + err.failed_node,\n  'Error: ' + err.error_message,\n  enquiryId\n    ? 'Enquiry: ' + enquiryId + '\\nStatus → failed (dead_letter). Replay: python3 test/replay.py'\n    : 'No enquiry row — it failed before intake (nothing to replay).',\n  err.execution_url ? 'Execution: ' + err.execution_url : 'Execution id: ' + err.execution_id\n];\nreturn [{ json: { ...err, enquiry_id: enquiryId, text: lines.join('\\n') } }];"
+        "jsCode": "// `mark failed` returns { id } when it marked a row. With no matching row (the run died before\n// `record received`, e.g. an invalid email) Postgres outputs { success: true } instead - check.\n// Sent with parse_mode HTML. Telegram's default (Markdown) chokes on underscores like `dead_letter`\n// and on whatever an error message contains, so escape the three HTML specials and nothing else.\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst err = $('read error').first().json;\nconst row = $input.first()?.json ?? {};\nconst enquiryId = row.id ?? '';\n\n// No customer data in the alert (it leaves our systems via Telegram) - just the id to look up.\nconst lines = [\n  '🚨 <b>Enquiry Desk — run failed</b>',\n  'Node: ' + esc(err.failed_node),\n  'Error: ' + esc(err.error_message),\n  enquiryId\n    ? 'Enquiry: ' + enquiryId + '\\nStatus → failed (dead_letter). Replay: python3 test/replay.py'\n    : 'No enquiry row — it failed before intake (nothing to replay).',\n  err.execution_url ? 'Execution: ' + esc(err.execution_url) : 'Execution id: ' + esc(err.execution_id)\n];\nreturn [{ json: { ...err, enquiry_id: enquiryId, text: lines.join('\\n') } }];"
       }
     },
     {
@@ -98,7 +98,7 @@
         1120,
         0
       ],
-      "notes": "Bot token in n8n Credentials only",
+      "notes": "parse_mode HTML (text escaped in build alert). Bot token in n8n Credentials only",
       "credentials": {
         "telegramApi": {
           "id": "f0NSkRcTr0rBgguW",
@@ -109,7 +109,8 @@
         "chatId": "{{ALERT_CHAT_ID}}",
         "text": "={{ $('build alert').first().json.text }}",
         "additionalFields": {
-          "appendAttribution": false
+          "appendAttribution": false,
+          "parse_mode": "HTML"
         }
       },
       "webhookId": "8f5e7043-8a41-4610-937a-a93e6a941fd7"

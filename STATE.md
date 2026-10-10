@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Session 3 in progress:** ✅ A write-first intake · ✅ B error workflow + Telegram · ✅ C replay · next **D** chaos test
+**Session 3 core done:** ✅ A write-first · ✅ B error workflow + Telegram · ✅ C replay · ✅ D chaos test · next: E stretch / t01 fact gap
 
 ## Status
 
@@ -186,12 +186,25 @@ anything is still failed.
 - **Tested:** t04 failed "today" + t10 failed "yesterday" (key re-dated) → both `processed`, same ids, one
   row per email, `dead_letter` empty, exit 0. (Test-only side effect: both now have 2 `reply` rows.)
 
-### D · Chaos test — the demo moment (~15 min)
+### D · Chaos test — the demo moment ✅ done 2026-10-11 (agent, on request)
 
 1. Set `config.llm_url` to a bad host (e.g. `https://bedrock-runtime.invalid/…`), Publish.
 2. POST t01 → within ~1 min: row `failed`, Telegram alert arrives.
 3. Restore the URL, Publish → `python3 test/replay.py` → row `processed`, reply stored.
 4. Full `score.py` run → still 23/24, 0 invented prices. Record it in *Results history*.
+
+**Result — the failure path works end to end:**
+- Bad URL → t01 failed after 4 retries (~16 s) → row `failed`, in `dead_letter` with `last_error` =
+  "classify: The connection cannot be established…" → **Telegram alert delivered** (2nd attempt, see below).
+- URL restored (draft = live) → `replay.py --dry-run` listed 2 → replay → **2/2 processed**, same ids, one
+  reply each. `run_log` keeps the story: `classify:failed, classify:ok, draft:ok`.
+- **Caught by the chaos test:** the first alert **didn't send** — the Telegram node defaults to **Markdown**,
+  and the `_` in `dead_letter` opened an unclosed italic (400 "can't parse entities"). The morning's test
+  alert had no underscore. Fix: `parse_mode: HTML` + escape `& < >` in `build alert`. Re-tested: sent.
+- **Re-score** `20261011-014710`: category 22/24, flags 6/6, actions **21/24**, invented prices 0/12,
+  `dead_letter` empty. Misses: t06 (blocked £190 — fine), t22 (defers — fine), **t01 (new, see Open issues)**.
+- Note: an **error in the errors workflow has no alert of its own** — that's why the Markdown bug was
+  silent. Keep the alert path dumb and test it with a real failure after every change.
 
 ### E · If time is left (stretch, in this order)
 
@@ -264,10 +277,18 @@ Settings: save successful production executions = all.
 | `20261011-001132` | 22/24 | 6/6 | 6/6 | 21/24 | 0/12 | $0.00125 | Gate 2 + clarify + validator; t06 £190 blocked |
 | `20261011-001555` | 22/24 | 6/6 | 6/6 | **23/24** | **0/14** | $0.00122 | "Not offered = answered" wording |
 | `20261011-010552` | 22/24 | 6/6 | 6/6 | 22/24 | 0/13 | $0.00123 | **Write-first intake.** t22 now defers (good) → escalate |
+| `20261011-014710` | 22/24 | 6/6 | 6/6 | 21/24 | 0/12 | $0.00123 | After chaos test. **t01 escalates**: draft invents "trial is GCSE-only" (fact gap) |
 
 Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs, not single cases.
 
 ## Open issues
+
+- **t01 fact gap (new, 2026-10-11):** the facts never say *which subjects the free trial covers*. In 3 runs the
+  draft said "yes, A-Level Biology this Saturday"; in the last 2 it **invented a restriction** ("the trial only
+  includes GCSE subjects…" / "A-Level Biology isn't available") and gate 2 escalated it — so no wrong answer
+  would reach a customer, but a good enquiry lost its auto-reply. **Fix (next):** add to `kb/facts.yaml` *and*
+  the `facts` node: `trial.applies_to: every subject with available: true, in its scheduled slot`; consider
+  draft `temperature: 0`. Re-score; t01 should auto_send again. Another case for the claims check (t22).
 
 - **Invented policies get through (t22):** "we offer flexibility, she can start mid-term in November" —
   not in the facts; the validator only checks numbers. → *Next feature*, item 2.
@@ -301,6 +322,9 @@ Export ritual: **reload the n8n tab** if the agent edited the workflow → **unp
 - **"Active" is now "Publish"** (n8n 2.x). Save edits the draft; production runs the published version.
   n8n-mcp edits land in both; a UI save (e.g. Tidy up) leaves draft ≠ live until you Publish.
 - **The webhook answers 200 before the workflow runs** — a throw still returns 200.
+- **The Telegram node sends Markdown by default** — an `_` (e.g. `dead_letter`) or `*` in the text breaks it
+  (400 "can't parse entities"). Use `parse_mode: HTML` and escape `& < >`.
+- **Nothing alerts on a failure inside the error workflow itself** — test it with a real failure after changes.
 - **Error Trigger** fires only for **production** runs (webhook), not manual *Execute workflow*. Its payload:
   `execution.{id, url, lastNodeExecuted, error.message}` — `url` is a direct link to the failed run.
 - **`on conflict … do update … where <cond>`** returns the row only when the update happens — that's how

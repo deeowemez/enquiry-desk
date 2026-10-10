@@ -13,8 +13,8 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        256,
-        1056
+        0,
+        0
       ],
       "webhookId": "b854dd39-12ea-41d3-be84-6a0cfd74b0c2",
       "notesInFlow": true,
@@ -29,8 +29,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        480,
-        1056
+        224,
+        0
       ],
       "notesInFlow": true,
       "notes": "Any channel -> ONE canonical envelope. Everything downstream reads only this shape"
@@ -44,8 +44,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2048,
-        832
+        1792,
+        0
       ],
       "notesInFlow": true,
       "notes": "The fact table. The reply may assert NOTHING outside this. Mirror of kb/facts.yaml"
@@ -59,8 +59,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2272,
-        832
+        0,
+        592
       ],
       "notesInFlow": true,
       "notes": "Builds the Bedrock Converse payload. Schema + instructions live here. Forced tool call = structured JSON"
@@ -83,8 +83,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2496,
-        832
+        224,
+        592
       ],
       "notesInFlow": true,
       "retryOnFail": true,
@@ -107,8 +107,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2720,
-        832
+        448,
+        592
       ],
       "notesInFlow": true,
       "notes": "Reads the tool call + tokens; cost from `config` prices. On PARSE FAILED, the summary shows stopReason + response keys"
@@ -122,8 +122,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3616,
-        1072
+        224,
+        992
       ],
       "notesInFlow": true,
       "notes": "Only this category's facts. Smaller prompt, cheaper, and 'grounded on' means something"
@@ -137,8 +137,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3840,
-        1072
+        448,
+        992
       ],
       "notesInFlow": true,
       "notes": "Converse payload with forced tool write_reply: the reply AND the second gate (answerable?) come back together"
@@ -161,8 +161,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4064,
-        1072
+        672,
+        992
       ],
       "notesInFlow": true,
       "retryOnFail": true,
@@ -185,8 +185,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5632,
-        784
+        0,
+        1920
       ],
       "notesInFlow": true,
       "notes": "All three branches land here. Flatten to one DB row; cost = classify + draft (if any)"
@@ -204,8 +204,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        5856,
-        784
+        224,
+        1920
       ],
       "notesInFlow": true,
       "credentials": {
@@ -219,8 +219,8 @@
     {
       "parameters": {
         "content": "## Enquiry Desk — what this does\n\nA customer enquiry arrives. It is **classified**, answered **only from a fact table it cannot\ndeviate from**, and recorded — with cost tracked per enquiry.\n\n**The business problem.** Meridian Tutors (fictional) is staffed from the UK, 09:00–18:00 UTC.\nIts customers are in Hong Kong, Singapore and Malaysia — UTC+8. Those UK hours are 17:00–02:00\nlocal, so **the entire Asian business day is unstaffed.** A parent asking a question at 10am\nlocal waits seven hours, while emailing two competitors.\n\n**The flow**\n\n`form → envelope → save (202) → classify → derive slots → route → draft / clarify → answerable? → validate → record` · failures → `01 Enquiry Desk - errors`\n\n**The design decision worth defending:** grounding comes from a **structured fact table, not RAG**.\nIt is auditable, cheaper, and it cannot invent a price. A tutoring company can survive a slow\nreply; it cannot survive quoting a discount that does not exist.\n\n**Cost:** ~$0.001 per enquiry — both model calls run on Amazon Nova 2 Lite (Bedrock),\npriced in the `config` node. Measured over 24 test cases, not estimated.\n\n⚠️ **Session 3 done** — see the red note for what is still missing.",
-        "height": 470,
-        "width": 900,
+        "height": 520,
+        "width": 1140,
         "color": 7
       },
       "id": "c078c55a-50b4-4f47-90f9-559359684ab5",
@@ -228,15 +228,15 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        272,
-        -144
+        -80,
+        -720
       ]
     },
     {
       "parameters": {
         "content": "### ① INTAKE → ENVELOPE\nNormalise first, then **write first**: the enquiry is in Postgres before any model call, so a failure can't lose it. 400 for bad input, 200 for duplicates, 202 + id once saved.",
-        "height": 130,
-        "width": 680,
+        "height": 480,
+        "width": 2360,
         "color": 5
       },
       "id": "dfd3f5d2-edf3-463e-a237-9643e3d7ff5e",
@@ -244,15 +244,15 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        240,
-        448
+        -80,
+        -160
       ]
     },
     {
       "parameters": {
-        "content": "### ② UNDERSTAND\nCheap model, strict schema (forced tool). It **extracts** category, details and safety flags; code **decides** what's missing (`derive missing slots`). Confidence is recorded, never routed on.",
-        "height": 130,
-        "width": 1064,
+        "content": "### ② UNDERSTAND → ROUTE\nCheap model, strict schema (forced tool). It **extracts** category, details and safety flags; code **decides** what's missing (`derive missing slots`) and where it goes (`route`: flag → sensitive → vague → missing → auto_send). Confidence is recorded, never routed on.",
+        "height": 340,
+        "width": 2360,
         "color": 5
       },
       "id": "c7740d6c-95b3-40ba-a67d-61e84691880c",
@@ -260,15 +260,15 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        928,
-        448
+        -80,
+        432
       ]
     },
     {
       "parameters": {
-        "content": "### ③ GROUND & DRAFT\nPass only the facts this category needs, then forbid everything else. Grounding is enforced by what you *send*, not by asking nicely.",
-        "height": 130,
-        "width": 1784,
+        "content": "### ③ WRITE & CHECK\n**auto_send:** only this category's facts → draft → *answerable?* → a second model **verifies** every claim → code **validates** numbers + availability. **clarify:** code picks the one question, the model phrases it. **escalate:** no AI draft — a human writes it.",
+        "height": 880,
+        "width": 2360,
         "color": 5
       },
       "id": "b5b6a981-a5f8-4846-a9e4-b443b842fba9",
@@ -276,15 +276,15 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        2000,
-        448
+        -80,
+        832
       ]
     },
     {
       "parameters": {
-        "content": "### ④ RECORD\nrun_log is where your portfolio numbers come from: cost, latency and model per stage. Nothing is emailed. By design.",
-        "height": 130,
-        "width": 924,
+        "content": "### ④ RECORD\n`update enquiry` (status → processed), `run_log` (cost + model per stage), `reply` (blocked ones with the reason). Nothing is sent. By design.",
+        "height": 340,
+        "width": 2360,
         "color": 5
       },
       "id": "3dea2d09-5195-49a8-9d9a-eba22e4fb379",
@@ -292,15 +292,15 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        3792,
-        448
+        -80,
+        1760
       ]
     },
     {
       "parameters": {
         "content": "## ⚠️ Not finished — session 3 done, session 4 next\n\n- **In:** write-first intake, routing, the second gate, one-question clarify, a claim validator, and a **failure path**: any production failure marks the row `failed` (dead letter), logs it and sends a Telegram alert (`01 Enquiry Desk - errors`). `test/replay.py` re-runs failed enquiries.\n- **Measured:** 24 labelled cases, `test/score.py`. 0 invented prices reach a reply; t06's £190 bundle is **blocked**.\n- **Claims:** numbers by regex, availability by code, every other factual statement by a **second model** (`verify`) that must quote its evidence. It caught a real error: a draft putting GCSE Maths on Saturdays. Residual risk: the verifier is a model.\n- **Nothing is sent.** Replies are stored only, until an approval step exists.\n\n**Next (session 4):** Telegram approve / edit / take-over for escalated and blocked replies; a real inbox.",
-        "height": 300,
-        "width": 900,
+        "height": 520,
+        "width": 1160,
         "color": 3
       },
       "id": "935ffb92-b2b3-4502-b170-ae9b60e961ac",
@@ -308,8 +308,8 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1344,
-        -144
+        1120,
+        -720
       ]
     },
     {
@@ -323,8 +323,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        6080,
-        784
+        448,
+        1920
       ],
       "id": "c9c8ec0a-188b-4376-a664-cc73c1781bcb",
       "name": "insert run_log",
@@ -381,8 +381,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1824,
-        832
+        1568,
+        0
       ],
       "notesInFlow": true,
       "notes": "Model settings in ONE place. Swap provider = edit this node"
@@ -396,8 +396,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2944,
-        832
+        672,
+        592
       ],
       "notesInFlow": true,
       "notes": "Model says what the customer SAID; this rule table decides what's MISSING. Testable, no model judgement"
@@ -517,8 +517,8 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        3168,
-        784
+        896,
+        592
       ],
       "notesInFlow": true,
       "notes": "First match wins. Flags above everything: a flag at 0.99 confidence still escalates. Confidence is NOT used"
@@ -543,8 +543,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        5408,
-        688
+        0,
+        1520
       ],
       "notesInFlow": true,
       "notes": "No AI draft: a human writes this one"
@@ -569,8 +569,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        4512,
-        864
+        0,
+        1344
       ],
       "notesInFlow": true,
       "notes": "Missing details or too vague -> a one-question reply (code picks what to ask)"
@@ -595,8 +595,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        3392,
-        1072
+        0,
+        992
       ],
       "notesInFlow": true,
       "notes": "Provisional: the second gate (can <facts> answer it?) can still escalate. Nothing is sent yet"
@@ -610,8 +610,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4288,
-        1072
+        896,
+        992
       ],
       "notesInFlow": true,
       "notes": "Reads write_reply {reply, answerable, unanswered}. No tool call = not answerable (a human looks)"
@@ -646,8 +646,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        4512,
-        1072
+        1120,
+        992
       ],
       "notesInFlow": true,
       "notes": "Second gate. False = the facts can't answer it, or a person must act -> escalate"
@@ -684,8 +684,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        5408,
-        1216
+        1344,
+        1168
       ],
       "notesInFlow": true,
       "notes": "Draft kept for the human, stored as blocked with the reason"
@@ -699,8 +699,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4736,
-        864
+        224,
+        1344
       ],
       "notesInFlow": true,
       "notes": "WHAT to ask comes from code (missing_slots). The model only phrases it, in their language"
@@ -723,8 +723,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4960,
-        864
+        448,
+        1344
       ],
       "notesInFlow": true,
       "retryOnFail": true,
@@ -747,8 +747,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5184,
-        864
+        672,
+        1344
       ],
       "notesInFlow": true,
       "notes": "Exactly one question, checked in code. Otherwise a fixed template is used"
@@ -762,8 +762,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5408,
-        880
+        2016,
+        992
       ],
       "notesInFlow": true,
       "notes": "Numbers by regex, availability by code, free-text claims by the verifier. Any problem -> blocked"
@@ -781,8 +781,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        6304,
-        784
+        672,
+        1920
       ],
       "notesInFlow": true,
       "credentials": {
@@ -806,8 +806,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        928,
-        960
+        672,
+        0
       ],
       "notesInFlow": true,
       "credentials": {
@@ -827,8 +827,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1152,
-        960
+        896,
+        0
       ],
       "notesInFlow": true,
       "notes": "Puts the envelope back with the row's real id, and flags duplicates (no id returned)"
@@ -863,8 +863,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        704,
-        1056
+        448,
+        0
       ],
       "notesInFlow": true,
       "notes": "Bad input gets a 400 straight back - it is not a failure, so no dead letter and no alert"
@@ -882,8 +882,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        928,
-        1152
+        672,
+        192
       ],
       "notesInFlow": true,
       "notes": "Tells the sender what's wrong. Nothing stored"
@@ -918,8 +918,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1376,
-        960
+        1120,
+        0
       ],
       "notesInFlow": true,
       "notes": "Same email + message today, already handled -> say so and stop (no model calls)"
@@ -937,8 +937,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        1600,
-        1024
+        1344,
+        192
       ],
       "notesInFlow": true,
       "notes": "200: we already have it. The run ends here"
@@ -956,8 +956,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        1600,
-        832
+        1344,
+        0
       ],
       "notesInFlow": true,
       "notes": "202 + reference id, sent only once the enquiry is safely in Postgres. Processing continues after"
@@ -971,8 +971,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4736,
-        1056
+        1344,
+        992
       ],
       "notesInFlow": true,
       "notes": "Claim check: a SECOND model lists every factual statement and whether <facts> support it"
@@ -995,8 +995,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4960,
-        1056
+        1568,
+        992
       ],
       "notesInFlow": true,
       "retryOnFail": true,
@@ -1019,8 +1019,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5184,
-        1056
+        1792,
+        992
       ],
       "notesInFlow": true,
       "notes": "Any claim not supported === true -> a claim problem (no result = problem: a human looks)"
@@ -1449,7 +1449,7 @@
     "saveDataSuccessExecution": "all",
     "errorWorkflow": "BSmcb09mPBarqPjO"
   },
-  "versionId": "caad6042-2e8d-42e8-951a-feed2b081d2e",
+  "versionId": "ab44c5f9-89d4-40c8-9b8f-ce70b77a3b54",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "79a6d2ca2cf0182b388c19c7c653ce5ad811e23004b52e0c272275de6898d98b"

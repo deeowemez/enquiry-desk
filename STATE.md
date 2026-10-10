@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Session 3 done** + ✅ **free-text claims check** (verifier model + availability backstop) · next: **session 4**
+**Session 3 done** + ✅ claims check + ✅ canvas laid out in stage rows · next: booking-fact fix → Loom → session 4 (approvals)
 
 ## Status
 
@@ -291,6 +291,13 @@ lessons of the session). The agent reviews and runs the chaos test.
      *do* cover; the model **misread nested JSON** (Physics' `available: false` as Biology's) until facts were
      rendered as **plain lines** and it had to **quote** the line it used.
 
+## Canvas layout (2026-10-11)
+
+Stage rows, each under its sticky (~2400 × 2900 px, fits one screen at zoom-to-fit): **①** intake row
+(+ `respond 400` / `respond duplicate` branches) · **②** understand → `route` · **③** write & check — auto_send
+lane, gate-2 branch, clarify lane, escalate lane · **④** record. The "what this does" and red notes sit above.
+Done by script (positions + sticky size/text only; asserted no node logic changed).
+
 ## Node map (42 incl. sticky notes)
 
 | Stage | Nodes |
@@ -326,6 +333,12 @@ Settings: save successful production executions = all.
 Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs, not single cases.
 
 ## Open issues
+
+- **Booking fact gap (found 2026-10-11, after the layout):** t01's draft ended "You can sign up for the trial
+  through our website" — the facts say nothing about a website or how to book, so the verifier **blocked**
+  it (correctly). Fix: add a `booking` fact (e.g. "reply to this email to book; we confirm within one UK
+  working day") to `kb/facts.yaml` **and** the `facts` node, and a draft rule: "never mention a website,
+  link, app, phone number or process that isn't in <facts>". Re-score; expect t01 to auto-send again.
 
 - ✅ **t01 fact gap — fixed 2026-10-11** (see session 3 E). Kept for the record: the facts never say *which subjects the free trial covers*. In 3 runs the
   draft said "yes, A-Level Biology this Saturday"; in the last 2 it **invented a restriction** ("the trial only

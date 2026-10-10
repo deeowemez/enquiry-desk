@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Session 3 in progress:** ✅ A write-first intake · ✅ B error workflow + Telegram · next **C** replay → D chaos test
+**Session 3 in progress:** ✅ A write-first intake · ✅ B error workflow + Telegram · ✅ C replay · next **D** chaos test
 
 ## Status
 
@@ -168,13 +168,23 @@ Trap to expect: the Error Trigger fires for **production** executions, not manua
   must be re-placeholdered before commit** (the agent's scan does it).
 - `build alert` handles "no row matched" explicitly — Postgres returns `{success: true}`, not nothing.
 
-### C · Replay (~20 min)
+### C · Replay ✅ done 2026-10-11 (agent, on request)
 
 - C1 **`test/replay.py`** (stdlib, like `score.py`): reads `dead_letter`, re-POSTs each enquiry (same email +
   message) to the production webhook, waits for `processed`. A2's reclaim rule lets it through the dedupe.
 - C2 `--dry-run` lists what it would replay.
 
 **Done when:** a failed enquiry becomes `processed` after one `python3 test/replay.py`.
+
+**Result:** `test/replay.py` (stdlib): reads `dead_letter` → **re-keys** each row → re-POSTs it → waits for a
+*new* execution id to finish → ✓ processed / ✗ failed again. `--dry-run`, `--only <uuid,…>`; exit 1 if
+anything is still failed.
+- **Why the re-key:** the dedupe key is `sha256(email|body|date)` with the date of the POST. A replay on a
+  later day would miss the failed row and insert a second one. The script sets the failed row's key to the
+  one today's POST will compute (verified identical to `normalise` on 3 rows), so the POST reclaims it.
+  If that key is already taken (the customer re-sent it today and it was processed), the row is skipped.
+- **Tested:** t04 failed "today" + t10 failed "yesterday" (key re-dated) → both `processed`, same ids, one
+  row per email, `dead_letter` empty, exit 0. (Test-only side effect: both now have 2 `reply` rows.)
 
 ### D · Chaos test — the demo moment (~15 min)
 
@@ -273,10 +283,12 @@ Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs,
 ## How to run things
 
 ```bash
-set -a; source .env; set +a          # loads WEBHOOK_PROD_URL
+set -a; source .env; set +a          # loads WEBHOOK_PROD_URL, ALERT_CHAT_ID
 python3 test/score.py --webhook "$WEBHOOK_PROD_URL" \
   --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"        # all 24, ~5 min, ~3¢
 # --only t06,t22   to run a few cases
+python3 test/replay.py --webhook "$WEBHOOK_PROD_URL" \
+  --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"        # replay dead_letter (--dry-run first)
 ```
 Export ritual: **reload the n8n tab** if the agent edited the workflow → **unpin all** → export to
 `workflows/01-intake.mine.json` → agent scans → commit (no attribution trailer).

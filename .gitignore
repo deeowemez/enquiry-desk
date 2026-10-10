@@ -4,3 +4,4 @@
 
 # test/results/*
 schema/test.sql
+__pycache__/

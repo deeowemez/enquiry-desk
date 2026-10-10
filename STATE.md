@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-10 · mid-session (workflow now runs on Nova 2 Lite)
-**Next:** export → baseline (all 24 on Nova) · plan below
+**Next:** export + commit → decide how to fix `missing_slots` → `route` Switch · plan below
 
 ## Status
 
@@ -16,7 +16,7 @@ to the card.
 **The workflow runs on Nova 2 Lite** (part B done by the agent, 2026-10-10). `t01` and `t18` pass
 end to end (~1.5 s per model call vs 30 s+ timeouts on Gemini). Gemini version is commit `9f383b3`.
 
-**Not yet:** workflow on Nova. 24-case baseline. Injection fix. Session 2 Switch.
+**Not yet:** reliable `missing_slots`. Session 2 Switch.
 
 ## Done
 
@@ -47,6 +47,9 @@ end to end (~1.5 s per model call vs 30 s+ timeouts on Gemini). Gemini version i
 - [x] 2026-10-10: schema fields got `description`s (Nova over-reported `missing_slots` without them)
 - [x] 2026-10-10: `insert enquiry` passes values as an **array expression** — the comma list split
       `["subject","timezone"]` into two params (`there is no parameter $12`)
+- [x] 2026-10-10: **Injection fix** — `prompt_injection` in `safety_flags` (node + repo schema), instruction
+      to flag it; `t24` label now expects it. Run `20261010-223551`: t24 flags `prompt_injection`, no
+      false flags on t01/t16/t18/t20. `language` description back to BCP-47 (matches repo schema)
 - [x] 2026-10-10: Raspberry Pi Connect on (remote shell only; the Pi is headless)
 
 ## Next — the plan
@@ -86,7 +89,7 @@ A6 status: ✅ passed 2026-10-10 — 200, "OK", 881 ms, 48 in / 12 out tokens (a
 
 ### C. After the baseline
 
-- Injection fix: `prompt_injection` in `safety_flags`; re-run `--only t24`
+- ✅ Injection fix (2026-10-10)
 - Session 2: the `route` Switch (rules ①–⑤ as in the build guide) → `t18` escalates at high confidence
 
 ## Before every export
@@ -100,7 +103,7 @@ A6 status: ✅ passed 2026-10-10 — 200, "OK", 881 ms, 48 in / 12 out tokens (a
 
 | Run | Model | Category acc. | Safety flags | Action acc. | Errors | Notes |
 |---|---|---|---|---|---|---|
-| 2026-10-__ baseline | nova-2-lite | _/24 | _/_ | n/a (session 1) | _ | Includes the `contact_email` slot fix; before the injection fix |
+| 2026-10-10 baseline `20261010-221447` | nova-2-lite | **21/24** (88%) | **5/5** | n/a (session 1) | 0 | Slots **2/6**. Misses: t13→trial_booking, t19→other, t23→course_content. Conf 0.8–1.0 on everything. $0.00094/enquiry. Before the injection fix |
 
 ## Things learned — don't relearn them
 
@@ -144,9 +147,14 @@ A6 status: ✅ passed 2026-10-10 — 200, "OK", 881 ms, 48 in / 12 out tokens (a
 ## Open questions / blockers
 
 - ✅ Nova prices set in `config`: $0.30 in / $2.50 out per MTok (Standard tier, 2026-10-10).
-- Nova still over-reports `missing_slots` on `t01` (`subject`, `level`) — see what the baseline says
-  before tuning.
-- `classification.schema.json` doesn't have the new field descriptions yet.
+- **`missing_slots` is unreliable (2/6)**: over-reports on clear cases (t01, t04, t07, t09), misses
+  `subject` on t02. Rule ④ can't trust it as-is. Idea: model extracts what's *present*, code decides
+  what's *missing* per category.
+- **Confidence isn't calibrated**: 0.8–1.0 on every case, incl. vague t21 (0.8) → rule ③ (< 0.75 →
+  clarify) would never fire.
+- **Drafted replies can't be reviewed**: not in the `reply` table, and successful executions aren't
+  saved. Turn on Save successful production executions (or write `reply`) before checking
+  `note_expected` cases.
 
 - The Nova rewrite is **not exported yet** — reload the n8n tab, then export.
 - `.gitignore` now ignores `test/results/*` — decide: keep results in git as before/after evidence?

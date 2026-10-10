@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Next session:** session 3 — the **failure path** (write-first intake + error workflow + Telegram alert)
+**Next session:** session 3 — the **failure path**: write-first intake → error workflow + Telegram → replay → chaos test (plan below)
 
 ## Status
 
@@ -24,6 +24,7 @@ Commits: Gemini version `9f383b3` · Nova move `2575bd4` · Switch `07d1120` · 
 |---|---|---|
 | 1–3 | ✅ Published, exported, scanned clean, committed + pushed (`672b806`) | — |
 | 4 | **A7 credit check** — Cost Explorer, group by Service, charge type Usage + Credit, 2026-10-10 | Confirms "credits only" really holds (~$0.15 of Bedrock offset by a Credit line) |
+| 5 | **Telegram bot** — token in n8n as `Telegram - alerts bot`, chat ID noted (session 3 step 0) | Needed for the alert |
 
 Not blocking: t22's invented policy (see *Open issues*). Cosmetic: the `action = clarify` note and
 sticky ② still describe the old design — tidy when convenient.
@@ -99,33 +100,84 @@ flowchart TB
 *decides or checks* · purple = outcomes · green = Postgres · **red dashed = the gap session 3 closes.**
 Route escalations get no AI draft; everything a model writes passes through code before it's stored.
 
-## Next feature — the failure path (session 3, part 1)
+## Session 3 plan — the failure path
 
-**Why this first:** today, if Bedrock fails 4 times or any node throws, the execution dies *before*
-`insert enquiry`. The customer got a 200, there's no row, no alert — **the enquiry silently vanishes.**
-That contradicts the whole pitch ("trust it unsupervised"), and it's what a technical reviewer checks first.
+**Goal:** no enquiry is ever silently lost. Today, if Bedrock fails 4 times or any node throws, the
+execution dies *before* `insert enquiry`: the customer got a 200, there's no row and no alert. After
+session 3, every enquiry is in Postgres within milliseconds of arriving, every failure is marked and
+announced on Telegram, and a failed enquiry can be replayed with one command.
 
-**Design (write first, enrich later):**
-1. **Insert the raw enquiry right after `normalise`** with `status = 'received'` and `n8n_execution_id`
-   (`$execution.id`) — new column. The later insert becomes an **update** (category, action,
-   `status = 'processed'`). Nothing can be lost after that first write.
-2. **Error workflow** `01 Enquiry Desk - errors` (Error Trigger), set as this workflow's *Error workflow*:
-   find the row by `n8n_execution_id` → `status = 'failed'` + a `run_log` row (`status = failed`, error
-   text, failing node). **Dead-letter = `enquiry where status = 'failed'`.**
-3. **Telegram alert** from the error workflow: case, failing node, error, link to the execution.
-   (Bot token in n8n Credentials only.)
-4. **Replay:** a small `replay` path (or `score.py --replay`) that re-posts `failed` enquiries.
+**Spec check:** the build guide lives on the Mac (`~/aian/get-rich/PROJECT-01-BUILD-GUIDE.md`), not the
+Pi — open its session 3 section and cite its trap numbers where they apply.
 
-**Done when:** point `config.llm_url` at a bad host → POST an enquiry → the row exists as `failed` and a
-Telegram message arrives within a minute → restore the URL → replay → `processed`.
+### 0 · Before the session (you, ~10 min)
 
-**After that, in order:**
-1. **Telegram approval for `escalate` / `blocked`** — the review queue: the drafted reply + reason with
-   *Approve / Edit / Take over* buttons. Same bot as the alerts. Also the core of session 4's demo.
-2. **Policy-claim check (t22)** — `write_reply` also returns `claims: [{text, fact_key}]`; code rejects any
-   claim whose `fact_key` isn't in `selected_facts`. Or an LLM-as-judge pass in `score.py`.
-3. **`llm-call` sub-workflow** (provider adapter) — only once there's a second provider to switch to.
-4. **Real 400 from the webhook** (Respond to Webhook) for a missing/invalid email.
+- [ ] **Telegram bot:** @BotFather → `/newbot` → token into n8n Credentials as **`Telegram - alerts bot`**
+      (Telegram API type). Press *Start* in the bot. Chat ID from **@userinfobot** — not secret, tell the agent.
+- [ ] **A7 credit check** in Cost Explorer (still open).
+
+### A · Write first, enrich later (~45 min)
+
+| Step | Change |
+|---|---|
+| A1 | **Schema:** `alter table enquiry add column n8n_execution_id text;` and use `status` = `received` → `processed` \| `failed`. Update `schema/schema.sql` too. |
+| A2 | **New node `record received`** right after `normalise`: insert the raw envelope with `status = 'received'`, `n8n_execution_id = {{ $execution.id }}`. `on conflict (external_key) do update … where enquiry.status = 'failed'` — a failed row can be **reclaimed** by a replay; anything else is a duplicate and returns 0 rows, which **stops the run before any model call** (dedupe gets cheaper too). |
+| A3 | **Re-attach the envelope** after it: a Postgres node replaces the item with its result, so `config` would see only `{id}`. A small Code node returns `$('normalise').all()`. *(This is the trap to understand, not just fix.)* |
+| A4 | **`insert enquiry` → `update enquiry`:** `update … set category, confidence, language, safety_flags, missing_slots, action, status = 'processed' where id = $1 returning id`. |
+| A5 | **`score.py`:** wait for `status in ('processed','failed')` — with write-first the row exists *before* processing, so the scorer would read a half-done row. Report failed rows separately. |
+
+**Done when:** a normal POST still scores 23/24; a duplicate POST makes no model calls.
+
+### B · Error workflow + Telegram alert (~45 min)
+
+| Step | Change |
+|---|---|
+| B1 | **New workflow `01 Enquiry Desk - errors`:** Error Trigger → Code (execution id, failing node, error message, execution URL). |
+| B2 | Postgres: `update enquiry set status = 'failed' where n8n_execution_id = $1 returning id, from_email, left(body, 120)`; then a `run_log` row (`stage` = failing node, `status = failed`, `error` = message). |
+| B3 | **Telegram** (`Telegram - alerts bot`): case, failing node, error, link to the execution. Chat ID in a Set node in the errors workflow. |
+| B4 | **Main workflow → Settings → Error workflow** = `01 Enquiry Desk - errors`. Publish **both**. |
+| B5 | **Dead-letter view:** `create view dead_letter as select id, received_at, from_email, body from enquiry where status = 'failed';` |
+
+Trap to expect: the Error Trigger fires for **production** executions, not manual *Execute workflow* runs
+— test through the webhook.
+
+**Done when:** a forced failure produces a `failed` row, a failed `run_log` row and a Telegram message.
+
+### C · Replay (~20 min)
+
+- C1 **`test/replay.py`** (stdlib, like `score.py`): reads `dead_letter`, re-POSTs each enquiry (same email +
+  message) to the production webhook, waits for `processed`. A2's reclaim rule lets it through the dedupe.
+- C2 `--dry-run` lists what it would replay.
+
+**Done when:** a failed enquiry becomes `processed` after one `python3 test/replay.py`.
+
+### D · Chaos test — the demo moment (~15 min)
+
+1. Set `config.llm_url` to a bad host (e.g. `https://bedrock-runtime.invalid/…`), Publish.
+2. POST t01 → within ~1 min: row `failed`, Telegram alert arrives.
+3. Restore the URL, Publish → `python3 test/replay.py` → row `processed`, reply stored.
+4. Full `score.py` run → still 23/24, 0 invented prices. Record it in *Results history*.
+
+### E · If time is left (stretch, in this order)
+
+1. **Real 400 for bad input** — Webhook → *Respond: using 'Respond to Webhook' node*; invalid email → 400
+   with a JSON error; valid → 202 `{id}` after `record received` (the customer gets a reference).
+2. **Tidy the stale notes** (`action = clarify`, sticky ②) and the red sticky.
+3. **Loom outline** (record in session 4): t18 escalates at 0.90 → t06's £190 blocked → chaos test alert →
+   replay → `score.py` numbers.
+
+### Deferred to session 4 (and why)
+
+- **Telegram approve / edit / take-over buttons** for `escalate` + `blocked` — the review queue; reuses
+  B's bot. Needs the failure path first so approvals can't vanish either.
+- **`llm-call` provider adapter** — only pays off with a second provider (Ollama); until then it's a refactor.
+- **Policy-claim check (t22)** — `write_reply` returns `claims[{text, fact_key}]`, code checks each key.
+
+### Who builds
+
+Session 3 isn't covered by CLAUDE.md rule 1, so the agent can build it — but **A2–A3 are worth building
+yourself** (the reclaim-on-conflict SQL and the "Postgres node replaces the item" trap are the two
+lessons of the session). The agent reviews and runs the chaos test.
 
 ## Decisions (made by the agent on request, 2026-10-10/11)
 

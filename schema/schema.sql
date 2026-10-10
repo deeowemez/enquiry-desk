@@ -14,7 +14,8 @@ create table enquiry (
   safety_flags  jsonb       not null default '[]',
   missing_slots jsonb       not null default '[]',
   action        text        check (action in ('auto_send','clarify','escalate','blocked')),
-  status        text        not null default 'new',
+  status        text        not null default 'received',  -- received -> processed | failed
+  n8n_execution_id text,                                 -- links a row to its run; the error workflow finds it by this
   created_at    timestamptz not null default now()
 );
 
@@ -52,5 +53,6 @@ create table run_log (
 );
 
 create index on enquiry (status, received_at);
+create index on enquiry (n8n_execution_id);
 create index on followup (due_at) where sent_at is null and not cancelled;
 create index on run_log (enquiry_id, at);

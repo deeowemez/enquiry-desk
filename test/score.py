@@ -69,13 +69,17 @@ def fetch(psql, email):
              coalesce((select replace(r.body, E'\\n', ' ') from reply r
                         where r.enquiry_id = e.id and not r.blocked limit 1), ''),
              coalesce((select sum(cost_usd) from run_log l
-                        where l.enquiry_id = e.id), 0)
-      from enquiry e where e.from_email = '{email}'"""
+                        where l.enquiry_id = e.id), 0),
+             e.status
+      from enquiry e where e.from_email = '{email}'
+        -- the row is written on arrival ('received'); wait until the run has finished with it
+        and e.status in ('processed', 'failed')"""
     rows = query(psql, sql)
     if not rows:
         return None
-    cat, conf, lang, flags, slots, action, reply, cost = rows[0]
+    cat, conf, lang, flags, slots, action, reply, cost, status = rows[0]
     return {
+        "status": status,
         "category": cat,
         "confidence": float(conf) if conf else None,
         "language": lang,
@@ -151,7 +155,12 @@ def main():
         r = {"id": case["id"], "note": case.get("note"), "expect": exp,
              "http_status": status, "got": got}
 
-        if got is None:
+        if got is not None and got["status"] == "failed":
+            r["verdict"] = "failed"
+            print(f"{case['id']:4} {exp['category']:24} {'— (FAILED)':24} {'✗':3} {'':5} {'':18} "
+                  f"run failed; row is in dead_letter")
+            got = r["got"] = None
+        elif got is None:
             r["verdict"] = "no row"
             print(f"{case['id']:4} {exp['category']:24} {'— (no row)':24} {'✗':3} {'':5} {'':18} "
                   f"HTTP {status}; check the n8n Executions list")
@@ -215,7 +224,10 @@ def main():
     print(f"Invented prices     {invented}/{len(with_reply)} replies" if with_reply else
           "Invented prices     not scored yet — replies aren't stored in the `reply` table")
     print(f"Mean cost/enquiry   ${sum(costs) / len(costs):.6f}" if costs else "Mean cost/enquiry   —")
-    missing = len(results) - len(scored)
+    failed = sum(1 for r in results if r.get("verdict") == "failed")
+    missing = len(results) - len(scored) - failed
+    if failed:
+        print(f"Failed runs         {failed} case(s) — in dead_letter; replay with test/replay.py")
     if missing:
         print(f"No row written      {missing} case(s) — look in n8n → Executions for the failure")
 

@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Next session:** session 3 — the **failure path**: write-first intake → error workflow + Telegram → replay → chaos test (plan below)
+**Session 3 in progress:** ✅ A write-first intake · next **B** error workflow + Telegram → C replay → D chaos test
 
 ## Status
 
@@ -35,7 +35,7 @@ sticky ② still describe the old design — tidy when convenient.
 flowchart TB
   subgraph S1["① INTAKE"]
     direction LR
-    W([Webhook<br/>POST /enquiry]) --> N[normalise<br/>envelope + email check] --> CFG[config<br/>URL · model · prices] --> F[facts]
+    W([Webhook<br/>POST /enquiry]) --> N[normalise<br/>envelope + email check] --> RR[(record received<br/>status = received)] --> EN[envelope<br/>duplicate? stop] --> CFG[config<br/>URL · model · prices] --> F[facts]
   end
 
   subgraph S2["② UNDERSTAND"]
@@ -63,10 +63,10 @@ flowchart TB
 
   subgraph S5["⑤ RECORD"]
     direction LR
-    P[prepare row] --> IE[(insert<br/>enquiry)] --> RL[(insert<br/>run_log)] --> RP[(insert<br/>reply)]
+    P[prepare row] --> IE[(update enquiry<br/>status = processed)] --> RL[(insert<br/>run_log)] --> RP[(insert<br/>reply)]
   end
 
-  X[/"NOT BUILT: error path<br/>a failure anywhere = enquiry lost, no alert"/]
+  X[/"NOT BUILT YET: error workflow<br/>row stays received · no alert"/]
 
   F --> BC
   D --> R
@@ -90,8 +90,8 @@ flowchart TB
   classDef act fill:#f3e8ff,stroke:#7c3aed,color:#000
   classDef gap fill:#fee2e2,stroke:#dc2626,color:#000,stroke-dasharray:5 5
   class C,DR,CL model
-  class D,R,G,V,RQ code
-  class IE,RL,RP db
+  class D,R,G,V,RQ,EN code
+  class RR,IE,RL,RP db
   class E,Q,A,E2 act
   class X gap
 ```
@@ -116,7 +116,7 @@ Pi — open its session 3 section and cite its trap numbers where they apply.
       in n8n; alert chat ID **`8922045686`** (goes in the errors workflow's Set node as `alert_chat_id`).
 - [ ] **A7 credit check** in Cost Explorer (still open).
 
-### A · Write first, enrich later (~45 min)
+### A · Write first, enrich later ✅ done 2026-10-11 (agent, on request)
 
 | Step | Change |
 |---|---|
@@ -127,6 +127,16 @@ Pi — open its session 3 section and cite its trap numbers where they apply.
 | A5 | **`score.py`:** wait for `status in ('processed','failed')` — with write-first the row exists *before* processing, so the scorer would read a half-done row. Report failed rows separately. |
 
 **Done when:** a normal POST still scores 23/24; a duplicate POST makes no model calls.
+
+**Result:** full run `20261011-010552` → category 22/24, flags 6/6, actions 22/24, invented prices 0/13; all
+24 rows `processed` with `n8n_execution_id`. The two "misses" are good behaviour: t06 £190 **blocked**, t22
+now *defers* the mid-term question ("I'll check") → escalate instead of inventing a policy (label says
+auto_send; its note allows escalate). Duplicate POST: run ends at `envelope`, **no model calls**.
+Reclaim: a `failed` row re-POSTed keeps its id, gets a new execution id, ends `processed`.
+- **Surprise:** a Postgres node returning **0 rows does NOT stop the run** — it outputs `{success: true}`.
+  The first duplicate test ran both model calls and crashed at `insert reply` (null id). Fixed in
+  `envelope` (no id ⇒ return `[]`); 3 orphan `run_log` rows from that test deleted.
+- Also removed the throwaway Telegram test node (`Send a text message`) left in the workflow.
 
 ### B · Error workflow + Telegram alert (~45 min)
 
@@ -201,16 +211,16 @@ lessons of the session). The agent reviews and runs the chaos test.
    (lesson times converted to UTC/UK allowed; unverified deadlines flagged by name). Fail ⇒ `blocked`.
 8. **`score.py`** counts invented prices only in **unblocked** replies (what would reach a customer).
 
-## Node map (32 incl. sticky notes)
+## Node map (34 incl. sticky notes)
 
 | Stage | Nodes |
 |---|---|
-| Intake | `Webhook` → `normalise` → `config` → `facts` |
+| Intake | `Webhook` → `normalise` → `record received` → `envelope` → `config` → `facts` |
 | Understand | `build classify request` → `classify` → `parse classification` → `derive missing slots` |
 | Route | `route` → `action = escalate` / `action = clarify` / `action = auto_send` |
 | Write: auto_send | `select facts` → `build draft request` → `draft` → `read draft` → `answerable?` → (`validate claims` \| `action = escalate (gate 2)`) |
 | Write: clarify | `build clarify request` → `clarify` → `read clarify` → `validate claims` |
-| Record | `prepare row` → `insert enquiry` → `insert run_log` → `insert reply` |
+| Record | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` |
 
 Credentials (n8n only): `Bedrock - API key` (Header Auth, `Bearer …`), `Postgres account`,
 `Telegram - alerts bot` (session 3 alerts; chat ID `8922045686`).
@@ -227,6 +237,7 @@ Settings: save successful production executions = all.
 | `20261010-233801` | 22/24 | 6/6 | 6/6 | 19/24 | — | $0.00096 | `route` Switch live |
 | `20261011-001132` | 22/24 | 6/6 | 6/6 | 21/24 | 0/12 | $0.00125 | Gate 2 + clarify + validator; t06 £190 blocked |
 | `20261011-001555` | 22/24 | 6/6 | 6/6 | **23/24** | **0/14** | $0.00122 | "Not offered = answered" wording |
+| `20261011-010552` | 22/24 | 6/6 | 6/6 | 22/24 | 0/13 | $0.00123 | **Write-first intake.** t22 now defers (good) → escalate |
 
 Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs, not single cases.
 
@@ -235,6 +246,8 @@ Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs,
 - **Invented policies get through (t22):** "we offer flexibility, she can start mid-term in November" —
   not in the facts; the validator only checks numbers. → *Next feature*, item 2.
 - **`blocked` vs `escalate` in `score.py`:** both reach a human; kept strict (t06 counts as a miss).
+- **t22's label** says `auto_send`, but deferring the mid-term question (→ escalate) is the better reply.
+  Consider changing the label to `escalate` — the note already allows it.
 - **t15 / t23 categories** still wrong (past-paper bank → course_content; US admissions →
   course_content) — harmless now: both replies are correct.
 - **A7** pending. Open billing question: does the credit cover Claude on Bedrock?
@@ -260,11 +273,17 @@ Export ritual: **reload the n8n tab** if the agent edited the workflow → **unp
 - **"Active" is now "Publish"** (n8n 2.x). Save edits the draft; production runs the published version.
   n8n-mcp edits land in both; a UI save (e.g. Tidy up) leaves draft ≠ live until you Publish.
 - **The webhook answers 200 before the workflow runs** — a throw still returns 200.
+- **`on conflict … do update … where <cond>`** returns the row only when the update happens — that's how
+  `record received` reclaims a `failed` row but treats anything else as a duplicate.
 - **Postgres `queryReplacement` as a comma list splits values with commas** → use `={{ [ … ] }}`.
 - **A node with several incoming branches runs once per arriving branch** — no Merge needed when only
   one branch fires (Merge waits for all inputs).
 - **`{{ }}` in SQL is string pasting** → every value via `$1..$n`. After a Postgres node use
-  `$('node').first()`. Same-day re-runs of pinned data write nothing (`external_key` dedupe).
+  `$('node').first()`.
+- **A Postgres node REPLACES the item with its result** (e.g. `{id}`) — re-attach the data you need
+  (`envelope` does `$('normalise').all()`).
+- **A Postgres query returning 0 rows does NOT stop the run** — the node outputs `{success: true}` and
+  everything downstream runs with missing fields. Check explicitly and return `[]` from a Code node.
 - **n8n-mcp blocks private IPs by default** → `WEBHOOK_SECURITY_MODE=permissive` (dev-only Pi).
 - **Tailscale Serve injects identity headers** — `normalise` drops them; execution history keeps them.
 

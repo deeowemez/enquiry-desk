@@ -43,7 +43,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        928,
+        1376,
         864
       ],
       "notesInFlow": true,
@@ -58,7 +58,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1152,
+        1600,
         864
       ],
       "notesInFlow": true,
@@ -82,7 +82,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1376,
+        1824,
         864
       ],
       "notesInFlow": true,
@@ -99,14 +99,14 @@
     },
     {
       "parameters": {
-        "jsCode": "// Bedrock Converse response: output.message.content[] is a list of blocks. With the forced\n// tool, the classification arrives already parsed in a toolUse block's `input`.\nconst cfg = $('config').first().json;\nconst IN = cfg.llm_price_in_per_mtok, OUT = cfg.llm_price_out_per_mtok;   // $ per MTok\n\nconst blocks = r => r?.output?.message?.content ?? [];\n\nfunction extractClassification(r) {\n  const tool = blocks(r).find(b => b.toolUse)?.toolUse;\n  if (tool && typeof tool.input === 'object') return tool.input;\n  // Fallback: the model answered in text instead of calling the tool\n  const text = blocks(r).filter(b => typeof b.text === 'string').map(b => b.text).join('');\n  return JSON.parse(text.replace(/^```(?:json)?\\s*|\\s*```$/g, ''));\n}\n// No thinking tokens on Nova with reasoning off: input + output is the whole bill.\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  let c;\n  try { c = extractClassification(r); }\n  catch (e) {\n    // Surfaces what came back so you can fix the extractor in one go.\n    c = { category: 'other', confidence: 0, language: 'en', details: {}, safety_flags: [],\n          summary: 'PARSE FAILED - stopReason: ' + r.stopReason + '; keys: ' + Object.keys(r).join(', ') };\n  }\n  const t = tokens(r);\n  const env = $('normalise').all()[idx].json;   // HTTP response replaced our data\n\n  return { json: { ...env,\n    classification: c,\n    classify_model: cfg.llm_model,\n    classify_tokens: t,\n    classify_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});"
+        "jsCode": "// Bedrock Converse response: output.message.content[] is a list of blocks. With the forced\n// tool, the classification arrives already parsed in a toolUse block's `input`.\nconst cfg = $('config').first().json;\nconst IN = cfg.llm_price_in_per_mtok, OUT = cfg.llm_price_out_per_mtok;   // $ per MTok\n\nconst blocks = r => r?.output?.message?.content ?? [];\n\nfunction extractClassification(r) {\n  const tool = blocks(r).find(b => b.toolUse)?.toolUse;\n  if (tool && typeof tool.input === 'object') return tool.input;\n  // Fallback: the model answered in text instead of calling the tool\n  const text = blocks(r).filter(b => typeof b.text === 'string').map(b => b.text).join('');\n  return JSON.parse(text.replace(/^```(?:json)?\\s*|\\s*```$/g, ''));\n}\n// No thinking tokens on Nova with reasoning off: input + output is the whole bill.\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  let c;\n  try { c = extractClassification(r); }\n  catch (e) {\n    // Surfaces what came back so you can fix the extractor in one go.\n    c = { category: 'other', confidence: 0, language: 'en', details: {}, safety_flags: [],\n          summary: 'PARSE FAILED - stopReason: ' + r.stopReason + '; keys: ' + Object.keys(r).join(', ') };\n  }\n  const t = tokens(r);\n  const env = $('envelope').all()[idx].json;    // HTTP response replaced our data\n\n  return { json: { ...env,\n    classification: c,\n    classify_model: cfg.llm_model,\n    classify_tokens: t,\n    classify_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});"
       },
       "id": "3918ab41-9393-4f3e-a5ab-93e7e0c75fb9",
       "name": "parse classification",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1600,
+        2048,
         864
       ],
       "notesInFlow": true,
@@ -121,7 +121,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2496,
+        2944,
         1104
       ],
       "notesInFlow": true,
@@ -136,7 +136,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2720,
+        3168,
         1104
       ],
       "notesInFlow": true,
@@ -160,7 +160,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2944,
+        3392,
         1104
       ],
       "notesInFlow": true,
@@ -184,7 +184,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3840,
+        4288,
         912
       ],
       "notesInFlow": true,
@@ -193,17 +193,17 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "insert into enquiry (\n  id, source, external_key, received_at, from_email, subject, body,\n  category, confidence, language, safety_flags, missing_slots, action, status\n) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,'new')\non conflict (external_key) do nothing\nreturning id;",
+        "query": "update enquiry\n   set category = $2, confidence = $3::numeric, language = $4,\n       safety_flags = $5::jsonb, missing_slots = $6::jsonb, action = $7,\n       status = 'processed'\n where id = $1::uuid\nreturning id;",
         "options": {
-          "queryReplacement": "={{ [ $json.id, $json.source, $json.external_key, $json.received_at, $json.from_email, $json.subject, $json.body, $json.category, $json.confidence, $json.language, $json.safety_flags, $json.missing_slots, $json.action ] }}"
+          "queryReplacement": "={{ [ $json.id, $json.category, $json.confidence, $json.language, $json.safety_flags, $json.missing_slots, $json.action ] }}"
         }
       },
       "id": "093b3830-e611-4405-ac98-25010fd7288e",
-      "name": "insert enquiry",
+      "name": "update enquiry",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        4064,
+        4512,
         912
       ],
       "notesInFlow": true,
@@ -213,7 +213,7 @@
           "name": "Postgres account"
         }
       },
-      "notes": "Parameterised insert. ON CONFLICT makes a re-delivered enquiry a no-op"
+      "notes": "The row already exists (record received). Fill in the results and mark it processed"
     },
     {
       "parameters": {
@@ -322,7 +322,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        4288,
+        4736,
         912
       ],
       "id": "c9c8ec0a-188b-4376-a664-cc73c1781bcb",
@@ -380,7 +380,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        704,
+        1152,
         864
       ],
       "notesInFlow": true,
@@ -395,7 +395,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1824,
+        2272,
         864
       ],
       "notesInFlow": true,
@@ -516,7 +516,7 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        2048,
+        2496,
         816
       ],
       "notesInFlow": true,
@@ -542,7 +542,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        3616,
+        4064,
         688
       ],
       "notesInFlow": true,
@@ -568,7 +568,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2720,
+        3168,
         864
       ],
       "notesInFlow": true,
@@ -594,7 +594,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2272,
+        2720,
         1104
       ],
       "notesInFlow": true,
@@ -609,7 +609,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3168,
+        3616,
         1104
       ],
       "notesInFlow": true,
@@ -645,7 +645,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3392,
+        3840,
         1104
       ],
       "notesInFlow": true,
@@ -683,7 +683,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        3616,
+        4064,
         1152
       ],
       "notesInFlow": true,
@@ -698,7 +698,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2944,
+        3392,
         864
       ],
       "notesInFlow": true,
@@ -722,7 +722,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3168,
+        3616,
         864
       ],
       "notesInFlow": true,
@@ -746,7 +746,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3392,
+        3840,
         864
       ],
       "notesInFlow": true,
@@ -761,7 +761,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3616,
+        4064,
         912
       ],
       "notesInFlow": true,
@@ -780,7 +780,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        4512,
+        4960,
         912
       ],
       "notesInFlow": true,
@@ -791,6 +791,46 @@
         }
       },
       "notes": "Every written reply, blocked or not, with the reason. Nothing is sent: sent_at stays null"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into enquiry (id, source, external_key, received_at, from_email, subject, body, status, n8n_execution_id)\nvalues ($1::uuid, $2, $3, $4::timestamptz, $5, $6, $7, 'received', $8)\non conflict (external_key) do update\n  set status = 'received',\n      n8n_execution_id = excluded.n8n_execution_id,\n      received_at = excluded.received_at\n  where enquiry.status = 'failed'      -- only a FAILED row can be reclaimed (replay); anything else is a duplicate\nreturning id;",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $json.source, $json.external_key, $json.received_at, $json.from_email, $json.subject, $json.body, $execution.id ] }}"
+        }
+      },
+      "id": "6e385d03-30d7-4541-b4ee-c473c28eb80f",
+      "name": "record received",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        704,
+        864
+      ],
+      "notesInFlow": true,
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "notes": "WRITE FIRST: the enquiry is safe in Postgres before any model call. Duplicate = 0 rows = run stops (free). A failed row can be reclaimed by a replay"
+    },
+    {
+      "parameters": {
+        "jsCode": "// `record received` returned only { id } - a Postgres node replaces the item with its result.\n// Put the envelope back. Use the id Postgres returned, not the one `normalise` generated:\n// on a replay the existing (failed) row is reclaimed and keeps its original id.\n//\n// Duplicate: the insert hit the conflict and returned 0 rows. n8n does NOT stop on 0 rows - the\n// Postgres node outputs { success: true } instead. So check for the id and drop the item here:\n// a Code node that returns [] really does end the run, before any model call is paid for.\nconst rows = $input.all();\nreturn $('normalise').all()\n  .map((e, i) => ({ json: { ...e.json, id: rows[i]?.json?.id } }))\n  .filter(item => item.json.id);"
+      },
+      "id": "15d6f150-64ec-4b93-9eda-c8f925ea5661",
+      "name": "envelope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        864
+      ],
+      "notesInFlow": true,
+      "notes": "Puts the envelope back with the row's real id. No id = duplicate -> returns nothing, so the run ends here (no model calls)"
     }
   ],
   "pinData": {},
@@ -865,29 +905,18 @@
       "main": [
         [
           {
-            "node": "insert enquiry",
+            "node": "update enquiry",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "insert enquiry": {
+    "update enquiry": {
       "main": [
         [
           {
             "node": "insert run_log",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "normalise": {
-      "main": [
-        [
-          {
-            "node": "config",
             "type": "main",
             "index": 0
           }
@@ -1104,6 +1133,39 @@
           }
         ]
       ]
+    },
+    "normalise": {
+      "main": [
+        [
+          {
+            "node": "record received",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "record received": {
+      "main": [
+        [
+          {
+            "node": "envelope",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "envelope": {
+      "main": [
+        [
+          {
+            "node": "config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -1113,7 +1175,7 @@
     "availableInMCP": false,
     "saveDataSuccessExecution": "all"
   },
-  "versionId": "0008b92d-52f1-4ded-ab6c-81903d22dc9c",
+  "versionId": "7419d8ff-0699-4032-8736-06a975a8d5c8",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "79a6d2ca2cf0182b388c19c7c653ce5ad811e23004b52e0c272275de6898d98b"

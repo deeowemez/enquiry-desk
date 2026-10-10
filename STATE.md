@@ -1,7 +1,7 @@
 # Enquiry Desk — state
 
 **Last updated:** 2026-10-11 · **session 2 done, committed and pushed** (`672b806`) — good stopping point
-**Session 3 done** + ✅ claims check + ✅ canvas laid out in stage rows · next: booking-fact fix → Loom → session 4 (approvals)
+**Session 3 done** + ✅ claims check + ✅ stage-row canvas + ✅ booking fact · next: A7 → **record the Loom** → session 4 (approvals)
 
 ## Status
 
@@ -329,17 +329,23 @@ Settings: save successful production executions = all.
 | `20261011-014710` | 22/24 | 6/6 | 6/6 | 21/24 | 0/12 | $0.00123 | After chaos test. **t01 escalates**: draft invents "trial is GCSE-only" (fact gap) |
 | `20261011-015701` | 22/24 | 6/6 | 6/6 | **22/24** | **0/13** | $0.00123 | `trial.applies_to` fact + draft temp 0 → t01 fixed. 400/202/200 responses; all 24 → 202 |
 | `20261011-021009` | 22/24 | 6/6 | 6/6 | 21/24 → **22/24** with t22 relabelled | 0/12 | $0.00172 | **Claims check.** Verifier **caught a real error**: t08 draft said GCSE Maths runs Sat + Sun (Sunday only) → blocked. Misses t06/t08/t22 all reach a human |
+| `20261011-024059` | 22/24 | 6/6 | 6/6 | 21/24 | 0/15 | $0.00176 | Booking fact **without scope**: t01 fixed, but t09/t22 auto-send (fact stretched) |
+| `20261011-024616` | 22/24 | 6/6 | 6/6 | **22/24** | **0/12** | $0.00176 | **+ scope line.** t01 auto, t09/t22 escalate. Misses: t06 £190 + t20 invented content — both **blocked** |
 
 Run-to-run variance at temperature 0 is ±1–2/24 on category — compare runs, not single cases.
 
 ## Open issues
 
-- **Booking fact gap (found 2026-10-11, after the layout):** t01's draft ended "You can sign up for the trial
-  through our website" — the facts say nothing about a website or how to book, so the verifier **blocked**
-  it (correctly). Fix: add a `booking` fact (e.g. "reply to this email to book; we confirm within one UK
-  working day") to `kb/facts.yaml` **and** the `facts` node, and a draft rule: "never mention a website,
-  link, app, phone number or process that isn't in <facts>". Re-score; expect t01 to auto-send again.
-
+- ✅ **Booking fact gap — fixed 2026-10-11.** t01's draft had invented "sign up through our website". Added a
+  `booking` fact (`kb/facts.yaml` **and** the `facts` node; given to every answerable category in `select facts`):
+  *how* = reply to this email, confirmed within one UK working day; *channels* = email only, no form/app/phone;
+  **scope** = new trials/subscriptions in listed slots only — start dates, mid-term joining and changing an
+  existing lesson are a staff decision. Draft rule: never mention a website/link/form/app/phone/process not in
+  the facts. **The scope line mattered:** without it the drafter stretched "reply to this email" to cover
+  moving a lesson (t09) and joining mid-term (t22) — both auto-sent until it was added.
+  Run `20261011-024616`: **actions 22/24** — t01 auto-sends, t09/t22 escalate; misses are t06 (£190 blocked)
+  and t20 (blocked: the Chinese reply invented what the subscription includes — the verifier works in Chinese).
+- The draft was overwritten by a **stale editor tab again** (02:41) — live kept the change; re-applied.
 - ✅ **t01 fact gap — fixed 2026-10-11** (see session 3 E). Kept for the record: the facts never say *which subjects the free trial covers*. In 3 runs the
   draft said "yes, A-Level Biology this Saturday"; in the last 2 it **invented a restriction** ("the trial only
   includes GCSE subjects…" / "A-Level Biology isn't available") and gate 2 escalated it — so no wrong answer
@@ -413,6 +419,8 @@ Export ritual: **reload the n8n tab** if the agent edited the workflow → **unp
 - **Self-reported confidence and vague yes/no fields are useless** (0.7–1.0 everywhere; `intent_clear`
   24/24 true). **A yes/no tied to a concrete check works** (`answerable` ≈ "did you have to say *I'll
   check*?") — but the wording decides it.
+- **Every fact needs a scope.** Give a model a process ("reply to this email") and it applies it to everything
+  nearby — say what it covers *and* what it doesn't.
 - **Let models extract, let code decide** — extraction 24/24 vs judgement 2/6.
 - **A numeric validator can't catch invented policies** → a **second model as verifier** (narrow job,
   temperature 0, must quote its evidence) + **code backstops** for the claim types you can pattern-match.

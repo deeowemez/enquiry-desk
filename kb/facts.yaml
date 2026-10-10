@@ -20,6 +20,16 @@ support_hours:
     Staffed from the UK. 09:00–18:00 UTC is 17:00–02:00 Hong Kong time, so the
     entire Asian business day and school day is unstaffed.
 
+booking:
+  how: >
+    Reply to this email with the student's subject and preferred lesson slot.
+    We confirm by email within one UK working day.
+  channels: email only — there is no online booking form, website sign-up, app or phone line.
+  scope: >
+    Covers booking a free trial or a new subscription in a listed lesson slot. It says nothing
+    about start dates, joining mid-term, or moving, pausing or cancelling an existing lesson —
+    those are decided by a member of staff, not by replying.
+
 pricing:
   currency: GBP
   subscription_per_subject_per_month: 95

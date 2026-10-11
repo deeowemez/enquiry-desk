@@ -26,14 +26,18 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `test/enquiries.jsonl` | 24 labelled cases. `t05`, `t11`, `t18`, `t24` are the ones that matter most |
 | `test/score.py` | Scorer: posts each case to the **production** webhook, reads back the row, reports accuracy. `--help` for usage |
 | `test/results/` | One JSONL per scoring run — compare before/after a change |
+| `test/replay.py` | Re-posts failed enquiries from the `dead_letter` view. `--dry-run` first |
+| `workflows/01-intake.mine.json` | **The live intake workflow** (export after every change) |
+| `workflows/01-errors.json`, `01-review.json` | Failure-path and human-review workflows. Chat ID is a `{{ALERT_CHAT_ID}}` placeholder (real value in `.env`) |
 | `workflows/01-intake.json` | **Answer key** for session 1, not my build |
-| `workflows/IMPORT.md` | How to import the answer key |
+| `workflows/IMPORT.md` | How to import the workflows |
 
 ## Environment
 
 - **n8n runs in Docker on the Raspberry Pi**, served over Tailscale at `https://raspberrypi.tailf7a7bf.ts.net`
   (not acer-tm, which the `n8n-stack` notes mention). Postgres is reachable from n8n.
-- Models: `gemini-3.8-flash`, **free tier**, via HTTP Request nodes to the Interactions API.
+- Models: **Amazon Nova 2 Lite on Bedrock** (`global.amazon.nova-2-lite-v1:0`, `ap-southeast-1`), paid from
+  AWS credits only. URL, model and prices live in the `config` node.
 - n8n container needs `NODE_FUNCTION_ALLOW_BUILTIN=crypto`.
 
 ## Rules for the agent
@@ -41,7 +45,7 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 1. **I'm learning, so I build; you review.** For session 1 nodes and session 2 branching, don't build
    the nodes for me unless I ask. Explain, review my exports, debug from execution output. When you do
    build something, end by asking me to explain back why each node exists.
-2. **Synthetic data only.** The Gemini free tier trains on content. Never send real customer data.
+2. **Synthetic data only,** until Bedrock's data terms are confirmed for a real client. Never send real customer data.
 3. **No secrets in files.** Credentials live in n8n Credentials. Check every exported workflow JSON for
    keys before it's committed.
 4. **Dev instance only.** If the n8n MCP/API is connected, it points at the Pi, never a client's n8n.

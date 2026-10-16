@@ -170,6 +170,23 @@ outcomes · green = Postgres · red = errors workflow. Simplified: the exact nod
     `stats_health` excludes it.
 14. **Nova only; compare models per stage** (2026-10-14): Anthropic on Bedrock isn't covered by the credit.
     See *Model strategy*.
+15. **HTTP Request nodes, not n8n's AI nodes** (checked 2026-10-16/17). It began as the session-1 pattern, not a
+    recorded choice; here is why it holds. The alternative is Basic LLM Chain + AWS Bedrock Chat Model +
+    Structured Output Parser (not the AI Agent node: code decides, not the model).
+
+    | Need | HTTP Request (now) | Basic LLM Chain + Bedrock Chat Model |
+    |---|---|---|
+    | Forced tool call (`toolChoice`) → guaranteed JSON shape | Yes | No setting for it (options: temperature, max tokens, top P, retries, timeout, guardrail, free-form extra fields). The parser prompts for JSON — *not verified in this version* |
+    | Token counts → cost per enquiry in `run_log` | From the response `usage` | Output is text; no token counts found *(unverified)* |
+    | Credentials | Bedrock API key (header auth) | AWS IAM keys or assumed role — the current key won't work |
+    | Inference profile ID | Typed into the URL | Dropdown (listed, untested) |
+    | Per-stage model comparison | Needs the `config` split | Natural (one model node per chain) |
+    | Fewer nodes / less parsing | No (4 build + 4 read Code nodes) | Yes |
+
+    **Kept HTTP:** every measured number (6/6 flags, 0 invented claims, ~$0.0018) is from this version, and a swap
+    means re-measuring. `clarify` (plain text, no tool) is the only clean swap and isn't worth making one of four
+    inconsistent. Optional experiment: build `clarify` as a chain in a scratch copy and compare. Answer for "why not
+    the AI nodes?": forced tool calls for guaranteed structure, token usage for per-stage cost.
 
 ## Model strategy (decided 2026-10-14)
 

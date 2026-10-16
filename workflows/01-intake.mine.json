@@ -122,7 +122,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        224,
+        1344,
         992
       ],
       "notesInFlow": true,
@@ -137,7 +137,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        448,
+        1568,
         992
       ],
       "notesInFlow": true,
@@ -161,7 +161,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        672,
+        1792,
         992
       ],
       "notesInFlow": true,
@@ -186,7 +186,7 @@
       "typeVersion": 2,
       "position": [
         0,
-        1920
+        2096
       ],
       "notesInFlow": true,
       "notes": "All three branches land here. Flatten to one DB row; cost = classify + draft (if any)"
@@ -205,7 +205,7 @@
       "typeVersion": 2.5,
       "position": [
         224,
-        1920
+        2096
       ],
       "notesInFlow": true,
       "credentials": {
@@ -236,7 +236,7 @@
       "parameters": {
         "content": "### ① INTAKE → ENVELOPE\nNormalise first, then **write first**: the enquiry is in Postgres before any model call, so a failure can't lose it. 400 for bad input, 200 for duplicates, 202 + id once saved.",
         "height": 480,
-        "width": 2360,
+        "width": 3620,
         "color": 5
       },
       "id": "dfd3f5d2-edf3-463e-a237-9643e3d7ff5e",
@@ -252,7 +252,7 @@
       "parameters": {
         "content": "### ② UNDERSTAND → ROUTE\nCheap model, strict schema (forced tool). It **extracts** category, details and safety flags; code **decides** what's missing (`derive missing slots`) and where it goes (`route`: flag → sensitive → vague → missing → auto_send). Confidence is recorded, never routed on.",
         "height": 340,
-        "width": 2360,
+        "width": 3620,
         "color": 5
       },
       "id": "c7740d6c-95b3-40ba-a67d-61e84691880c",
@@ -267,8 +267,8 @@
     {
       "parameters": {
         "content": "### ③ WRITE & CHECK\n**auto_send:** only this category's facts → draft → *answerable?* → a second model **verifies** every claim → code **validates** numbers + availability. **clarify:** code picks the one question, the model phrases it. **escalate:** no AI draft — a human writes it.",
-        "height": 880,
-        "width": 2360,
+        "height": 1044,
+        "width": 3620,
         "color": 5
       },
       "id": "b5b6a981-a5f8-4846-a9e4-b443b842fba9",
@@ -284,7 +284,7 @@
       "parameters": {
         "content": "### ④ RECORD\n`update enquiry` (status → processed), `run_log` (cost + model per stage), `reply` (blocked ones with the reason). Nothing is sent. By design.",
         "height": 340,
-        "width": 2360,
+        "width": 3620,
         "color": 5
       },
       "id": "3dea2d09-5195-49a8-9d9a-eba22e4fb379",
@@ -293,7 +293,7 @@
       "typeVersion": 1,
       "position": [
         -80,
-        1760
+        1936
       ]
     },
     {
@@ -324,7 +324,7 @@
       "typeVersion": 2.6,
       "position": [
         448,
-        1920
+        2096
       ],
       "id": "c9c8ec0a-188b-4376-a664-cc73c1781bcb",
       "name": "insert run_log",
@@ -549,7 +549,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        0,
+        1120,
         1520
       ],
       "notesInFlow": true,
@@ -575,7 +575,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        0,
+        1120,
         1344
       ],
       "notesInFlow": true,
@@ -601,7 +601,7 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        0,
+        1120,
         992
       ],
       "notesInFlow": true,
@@ -616,7 +616,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        896,
+        2016,
         992
       ],
       "notesInFlow": true,
@@ -652,7 +652,7 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1120,
+        2240,
         992
       ],
       "notesInFlow": true,
@@ -690,8 +690,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1344,
-        1168
+        2464,
+        1520
       ],
       "notesInFlow": true,
       "notes": "Draft kept for the human, stored as blocked with the reason"
@@ -705,7 +705,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        224,
+        2464,
         1344
       ],
       "notesInFlow": true,
@@ -729,7 +729,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        448,
+        2688,
         1344
       ],
       "notesInFlow": true,
@@ -753,7 +753,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        672,
+        2912,
         1344
       ],
       "notesInFlow": true,
@@ -768,7 +768,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2016,
+        3136,
         992
       ],
       "notesInFlow": true,
@@ -788,7 +788,7 @@
       "typeVersion": 2.5,
       "position": [
         672,
-        1920
+        2096
       ],
       "notesInFlow": true,
       "credentials": {
@@ -977,7 +977,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1344,
+        2464,
         992
       ],
       "notesInFlow": true,
@@ -1001,7 +1001,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1568,
+        2688,
         992
       ],
       "notesInFlow": true,
@@ -1025,7 +1025,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1792,
+        2912,
         992
       ],
       "notesInFlow": true,
@@ -1062,7 +1062,7 @@
       "typeVersion": 2.2,
       "position": [
         896,
-        1920
+        2096
       ],
       "notesInFlow": true,
       "notes": "escalate or blocked -> a person reviews it. auto_send and clarify don't"
@@ -1081,7 +1081,7 @@
       "typeVersion": 2.5,
       "position": [
         1120,
-        1920
+        2096
       ],
       "notesInFlow": true,
       "credentials": {
@@ -1124,7 +1124,7 @@
       "typeVersion": 1.2,
       "position": [
         1568,
-        1920
+        2096
       ],
       "notesInFlow": true,
       "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad",
@@ -1167,10 +1167,23 @@
       "typeVersion": 2.2,
       "position": [
         1344,
-        1920
+        2096
       ],
       "notesInFlow": true,
       "notes": "score.py traffic (test+...@example.com) still gets a review, but no Telegram message - the test suite must not page anyone"
+    },
+    {
+      "parameters": {},
+      "name": "to record",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        3360,
+        1696
+      ],
+      "notesInFlow": true,
+      "notes": "Join point: every branch meets here, one line into ④. Passes items through unchanged",
+      "id": "533c634d-3a84-47f1-81f7-91649b0ac03b"
     }
   ],
   "pinData": {},
@@ -1361,7 +1374,7 @@
       "main": [
         [
           {
-            "node": "prepare row",
+            "node": "to record",
             "type": "main",
             "index": 0
           }
@@ -1401,7 +1414,7 @@
       "main": [
         [
           {
-            "node": "prepare row",
+            "node": "to record",
             "type": "main",
             "index": 0
           }
@@ -1456,7 +1469,7 @@
       "main": [
         [
           {
-            "node": "prepare row",
+            "node": "to record",
             "type": "main",
             "index": 0
           }
@@ -1625,6 +1638,17 @@
         [
           {
             "node": "review alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "to record": {
+      "main": [
+        [
+          {
+            "node": "prepare row",
             "type": "main",
             "index": 0
           }

@@ -1,11 +1,11 @@
 # How the Enquiry Desk works
 
-A walkthrough of the n8n workflow `01 Enquiry Desk - intake`, node by node, for someone opening it for the
+A walkthrough of the n8n workflows (intake, errors and review, each with a production and a staging copy), node by node, for someone opening it for the
 first time. You don't need to know n8n to follow it. Section 1 covers the few ideas you need first, and
 sections 3–6 go through the four stages on the canvas in order. Wherever n8n does something that surprises
 beginners, it's marked **⚠ Gotcha**.
 
-**Contents:** 0. [The job, in one paragraph](#0-the-job-in-one-paragraph) · 1. [Six n8n ideas you need first](#1-six-n8n-ideas-you-need-first) · 2. [The whole flow on one screen](#2-the-whole-flow-on-one-screen) · 3. [Stage ① Intake](#3-stage--intake--envelope) · 4. [Stage ② Understand and route](#4-stage--understand--route) · 5. [Stage ③ Write and check](#5-stage--write--check) · 6. [Stage ④ Record](#6-stage--record) · 7. [When something breaks](#7-when-something-breaks-the-errors-workflow) · 8. [The human review page](#8-the-human-review-page-the-review-workflow) · 9. [Where the data ends up](#9-where-the-data-ends-up) · 10. [Gotcha cheat sheet](#10-gotcha-cheat-sheet)
+**Contents:** 0. [The job, in one paragraph](#0-the-job-in-one-paragraph) · 1. [Six n8n ideas you need first](#1-six-n8n-ideas-you-need-first) · 2. [The whole flow on one screen](#2-the-whole-flow-on-one-screen) · 3. [Stage ① Intake](#3-stage--intake--envelope) · 4. [Stage ② Understand and route](#4-stage--understand--route) · 5. [Stage ③ Write and check](#5-stage--write--check) · 6. [Stage ④ Record](#6-stage--record) · 7. [When something breaks](#7-when-something-breaks-the-errors-workflow) · 8. [The human review page](#8-the-human-review-page-the-review-workflow) · 9. [Production and staging](#9-production-and-staging-the-six-workflows) · 10. [Where the data ends up](#10-where-the-data-ends-up) · 11. [Gotcha cheat sheet](#11-gotcha-cheat-sheet)
 
 ---
 
@@ -527,7 +527,147 @@ Telegram button opens.
 
 ---
 
-## 9. Where the data ends up
+## 9. Production and staging: the six workflows
+
+There are **three workflows**, and each has a **production** copy and a **staging** copy, so six in n8n. Production
+serves real traffic. Staging is the copy where every change is built and tested first, because `score.py` tests the
+**published** version of a workflow through its production webhook. Editing production in order to test it would
+mean publishing untested work. A change is built on staging, scored, and only then promoted to production **by a
+person**.
+
+### 9.1 What each one is
+
+| Workflow | Production | Staging |
+|---|---|---|
+| **intake** (47 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
+| **errors** | `01 Enquiry Desk - errors`, id `BSmcb09mPBarqPjO` (the intake's *Error workflow* setting) | `… (STAGING)`, id `xPopuT81Duh5QlOx` (the staging intake's *Error workflow* setting) |
+| **review** (14 nodes) | `01 Enquiry Desk - review`, `GET /webhook/review` and `POST /webhook/review-act`, id `QQEDcUxU7OJIeNn3` | `… (STAGING)`, `GET /webhook/review-staging` and `POST /webhook/review-act-staging`, id `S7LZWf6J4zNQKSgm` |
+
+The ids are in `test/staging.py` (production) and `test/staging.json` (staging). Everything else in a staging copy
+is a straight copy of production.
+
+### 9.2 Exactly what differs on staging
+
+| | Production | Staging |
+|---|---|---|
+| Intake webhook path | `enquiry` | `enquiry-staging` |
+| Intake error workflow | production errors | staging errors |
+| Intake `review alert` (Telegram link) | on | **disabled**: staging never messages your phone |
+| Intake `config.review_base_url` | `…/webhook/review` | `…/webhook/review-staging` |
+| Errors `telegram alert` | present | **removed**: a failure still marks the row `failed` and writes `run_log`, but nobody is paged |
+| Review webhook paths | `review`, `review-act` | `review-staging`, `review-act-staging` |
+| Review page's form action and back link | `review-act`, `review?id=` | `review-act-staging`, `review-staging?id=` |
+| Name | `01 Enquiry Desk - …` | same, with ` (STAGING)` |
+
+**What is shared, and why it matters:**
+
+- **One Postgres.** Staging and production write to the same tables. Test traffic uses addresses like
+  `test+…@example.com`, which the `stats_*` views flag as `is_test`, so dashboards can filter it.
+- **The same credentials.** Staging calls Bedrock with the same key, so staging runs cost real (credit) money,
+  about $0.0023 per enquiry.
+- **⚠ The same Gmail credential.** **Approving a reply on the staging review page creates a real Gmail draft** in the
+  business mailbox. Only drafts are ever created and nothing is sent, but use synthetic enquiries and delete the
+  test drafts.
+- **Pending reviews pile up.** A full scoring run leaves about 11 `pending` reviews. Filter `is_test`, or close them.
+
+### 9.3 How a change gets to production
+
+```mermaid
+flowchart LR
+  E[edit the STAGING copy<br/>staging.py set-model, or the n8n editor] --> S[score.py on /webhook/enquiry-staging<br/>2 full runs]
+  S --> G{compare.py --check<br/>passes?}
+  G -- no --> E
+  G -- yes --> P[promote: read-only plan]
+  P --> Y[a person runs promote --yes<br/>backs up live, applies, publishes]
+  Y --> X[export live to workflows/<br/>commit]
+  X --> N[sync staging from live<br/>if you made other staging edits]
+```
+
+1. **Change staging.** Edit the staging copy in the n8n editor, or use `python3 test/staging.py set-model
+   classify=…`. For anything beyond a single run use `test/sweep.py`, which takes a lock, restores staging on every
+   exit, and never touches production.
+2. **Score it.** Post the 24 cases to the staging webhook and label the run:
+   ```bash
+   set -a; source .env; set +a
+   STAGING="${WEBHOOK_PROD_URL%/enquiry}/enquiry-staging"
+   python3 test/score.py --webhook "$STAGING" --label "what I changed" \
+     --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"
+   ```
+3. **Gate it.** `python3 test/compare.py --check <run>` passes only if every safety flag passes, there are 0 invented
+   claims and 0 failed runs, category and actions are within ±1 case of `test/baseline.json`, and cost is within
+   +25%. Judge on at least two runs, because results vary by ±1–2 cases.
+4. **Read the plan.** `python3 test/staging.py promote` (add `review` for the review workflow) changes nothing. It
+   prints each stage's model on live and on staging, and the nodes that would change.
+5. **A person promotes.** `python3 test/staging.py promote --yes` (or `promote review --yes`).
+6. **Export and commit.** `python3 test/staging.py export --live` (add `review`) writes the live workflow to
+   `workflows/`, then scan it for secrets before committing.
+
+### 9.4 What promote does and protects
+
+`promote` copies staging's **graph** (nodes, connections and sticky notes) over production, and keeps production's
+own values:
+
+- the webhook paths and webhook ids;
+- the workflow ids and names;
+- the Telegram nodes and the `{{ALERT_CHAT_ID}}` chat id;
+- the review link (`config.review_base_url`) and the review page's paths;
+- the *Error workflow* setting, plus the other workflow settings (it checks they survived).
+
+Before applying it **backs up production** to `~/.local/state/enquiry-desk/promote-<time>.json`
+(`promote-review-<time>.json` for the review workflow). These backups hold the real chat id, so they are outside
+the repo and never committed. Then it publishes. `python3 test/staging.py rollback --yes` puts the latest backup
+back and publishes it (`rollback review --yes` for review).
+
+**Guards:**
+
+- **Refuses during a sweep.** A running experiment has changed staging's models, so promoting then would copy an
+  experiment into production. This once happened by hand: production ran `classify` on Nova Micro until it was
+  noticed and fixed.
+- **Refuses a non-default model** on staging (anything but Nova 2 Lite) unless you pass `--allow-models`.
+- **The agent can plan but not apply.** The assistant's permission layer blocks production deploys, so an agent
+  can show the plan and a person runs `--yes`, unless they have explicitly allowed it for one exact command.
+
+### 9.5 Keeping staging honest
+
+- **After a promotion**, staging and production should match. `promote` showing "Nothing to promote" confirms it.
+- **`python3 test/staging.py sync --yes`** overwrites staging with production's current draft. It discards any
+  un-promoted staging work, so run `export` first if you want to keep it.
+- **`python3 test/staging.py status`** shows ids, node counts, whether each is published, and the staging path.
+- **`create` and `create-review`** build the staging copies the first time. You only need them once.
+- **`python3 test/staging.py models`** shows which model each stage uses. `set-model` changes one, and only to a
+  model priced in `config.model_prices`.
+- Needs `N8N_API_KEY` in the environment (never written to a file). `N8N_API_URL` defaults to
+  `http://127.0.0.1:5678`.
+
+### 9.6 Files
+
+| Export | What it holds |
+|---|---|
+| `workflows/01-intake.mine.json` | **Production** intake |
+| `workflows/01-errors.json` | **Production** errors |
+| `workflows/01-review.json` | **Production** review |
+| `workflows/01-intake.staging.json` | Staging intake |
+| `workflows/01-review.staging.json` | Staging review |
+
+There is no separate staging errors export, because it is production's with the Telegram node removed. Exports
+contain the `{{ALERT_CHAT_ID}}` placeholder, never the real value, and credentials are never exported.
+
+### 9.7 Staging and production gotchas
+
+| Symptom | Cause | What to do |
+|---|---|---|
+| An API edit disappeared | An old editor tab saved over it | Close all tabs on that workflow, reload, then edit |
+| A staging change has no effect | n8n 2.x runs the **published** version | Publish staging; `staging.py` does this when it applies a change |
+| `promote` says it refuses | A sweep is running, or staging has a non-default model | `python3 test/sweep.py status` or `stop`; `staging.py models`; `--allow-models` only on purpose |
+| Staging error did not page anyone | The staging errors copy has no Telegram | Expected. Check `dead_letter` and `run_log` |
+| Staging approve created a real draft | Same Gmail credential | Delete the draft; use synthetic enquiries |
+| Test enquiries show in dashboards | They share the tables | Filter `is_test` |
+| Review link from staging opens production's page | `review_base_url` points at production | Staging's `config.review_base_url` must be `…/review-staging` |
+| Node missing its credential: save returns HTTP 400 but the draft saved and published | n8n's public API validates credentials on publish | Check the workflow's real state, then attach the credential |
+
+---
+
+## 10. Where the data ends up
 
 | Table / view | One row per | Key fields |
 |---|---|---|
@@ -540,7 +680,7 @@ The schema is in `schema/schema.sql`.
 
 ---
 
-## 10. Gotcha cheat sheet
+## 11. Gotcha cheat sheet
 
 | Symptom | Cause | Where it's handled |
 |---|---|---|

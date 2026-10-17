@@ -208,6 +208,8 @@ Record in segments, about 4–5 minutes.
     go live). Needs a Gmail OAuth2 credential in n8n; use a **dedicated mailbox**, not a personal one (the credential's scopes are broad).
     Tested on staging without the credential: the failure path (page says "Approved, but the Gmail draft could not be created" and
     why; database records `draft_error`), plus repeat approve → "Nothing changed", take over, and a bad token → rejected.
+    **Live since 2026-10-17** (credential `Gmail - drafts`, promoted with `promote review --yes`): the success path was verified on staging and
+    live: approving a synthetic enquiry created a draft, set `gmail_draft_id` and `drafted_at`, left `sent_at` empty.
 
 ## Model strategy (decided 2026-10-14)
 
@@ -346,7 +348,7 @@ is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke 
   backstop. Re-run the crafted set (see *Things learned*) whenever prompts change. Cost +40% from the verifier.
 - **Scoring is strict on purpose:** `blocked` ≠ `escalate` (t06 counts as a miss though both reach a human).
 - **t15 / t23 categories** still wrong (past-paper bank, US admissions → course_content) — replies are correct.
-- **Nothing is emailed.** A real inbox (Gmail/Outlook draft) is the next product step, ideally for a pilot.
+- **Nothing is sent automatically.** Approve creates a Gmail draft (decision 17); a person presses Send. Reading a real inbox is the next step, ideally for a pilot.
 - `score.py`: no error-type counts (503 / 429 / timeout); stale `--psql` docstring example.
 - Repo: `workflows/01-intake.json` is the session-1 answer key; `test/test.json` is a scratch file.
 

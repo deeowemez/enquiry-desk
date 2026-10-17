@@ -19,7 +19,7 @@ customer's enquiry and works out what kind of enquiry it is. It then does one of
 - **clarify:** it asks the customer one question to fill in a missing detail.
 - **escalate:** it hands the enquiry to a person.
 
-Every enquiry is stored in Postgres along with what it cost. **Nothing is ever emailed to the customer.**
+Every enquiry is stored in Postgres along with what it cost. **Nothing is ever sent to the customer automatically.** An approved reply becomes a Gmail *draft* that a person reads and sends.
 Replies are stored for a person to approve.
 
 The idea running through the whole design is **models extract, code decides.** The AI model reads text and
@@ -453,7 +453,7 @@ cost. This is where the cost-per-enquiry figure comes from, about $0.0023 measur
 
 #### `insert reply` (Postgres)
 Stores the reply text, `grounded_on`, `blocked` and `block_reason`, and only if there *is* a reply (the
-escalate branch has none). `sent_at` stays empty: **nothing is sent.**
+escalate branch has none). `sent_at` stays empty: **this workflow never sends.** The review workflow may later create a Gmail draft (section 8).
 
 #### `needs review?` (IF)
 `action` is `escalate` or `blocked` → a person must look. `auto_send` and `clarify` replies stop here.
@@ -513,6 +513,12 @@ Telegram button opens.
 - **`POST /webhook/review-act`** → the page's buttons: *Approve* (only when there's a draft) or *Take over*.
   `apply decision` only changes an enquiry that is still `pending` and has the matching token, and logs the
   decision. Anything else gets a 409 ("nothing changed").
+- **Approve also creates a Gmail draft.** `apply decision` returns the reply body, the customer's address and the
+  subject; `draft needed?` lets only an *approved* reply with a body through; `create gmail draft` (Gmail OAuth2
+  credential, **drafts only**: the node can't send) writes `Re: <subject>` to the business mailbox; `record draft`
+  stores `drafted_at` and `gmail_draft_id`, or `draft_error`. That node has *On Error: continue*, so a Gmail
+  failure never undoes the approval: the page says "Approved, but the Gmail draft could not be created" and why.
+  A person opens Drafts and presses Send. `sent_at` is never set.
 - Viewing the page (GET) never changes anything. Only the buttons (POST) do.
 
 > **⚠ Gotcha:** `load enquiry` is a SELECT that can find 0 rows, so it has *Always Output Data* on.
@@ -526,7 +532,7 @@ Telegram button opens.
 | Table / view | One row per | Key fields |
 |---|---|---|
 | `enquiry` | enquiry | `status` (received → processed / failed), `category`, `safety_flags`, `missing_slots`, `action`, `review_status`, `n8n_execution_id` |
-| `reply` | written reply | `body`, `grounded_on`, `blocked`, `block_reason`, `sent_at` (always empty) |
+| `reply` | written reply | `body`, `grounded_on`, `blocked`, `block_reason`, `drafted_at`, `gmail_draft_id`, `draft_error`, `sent_at` (always empty) |
 | `run_log` | stage of a run | `stage`, `status`, `model`, `cost_usd`, `error` |
 | `dead_letter` (view) | failed enquiry | the enquiry plus its last error |
 

@@ -281,7 +281,13 @@
       "onError": "continueRegularOutput",
       "notesInFlow": true,
       "notes": "DRAFT only, addressed to the customer. Nothing is ever sent: a person presses Send in Gmail. If Gmail fails the approval still stands (see record draft)",
-      "webhookId": "81eb810c-8905-40db-827d-1f264a9bdaa3"
+      "webhookId": "81eb810c-8905-40db-827d-1f264a9bdaa3",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CJMeQj0HoOGHJp4E",
+          "name": "Gmail - drafts"
+        }
+      }
     },
     {
       "id": "b475f04d-6a6b-47f4-a784-402a2e42fdb9",

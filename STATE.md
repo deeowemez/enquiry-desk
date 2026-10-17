@@ -327,9 +327,27 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261017-083955` / `-084347` | 19/24 | 6/6 | 5/6 | 21/24 | 0 | $0.00134 | `classify` = Nova Lite: fails (category) |
 | `20261017-084744` / `-085139` | 20/24 | 6/6 | 5/6 | 19–20/24 | 0 | $0.00246 | `classify` = Nova Pro: fails, and costs more than the baseline |
 | `20261017-085650` | 22/24 | 6/6 | 6/6 | 22/24 | 0/12 | $0.00238 | `clarify` = Nova Micro, **one run**: passes. Interrupted sweep: staging was restored 5 s before the end, but `clarify` only touches t02 and t21, which run early, so the result stands. Not a recommendation: `clarify` is not where accuracy is decided |
+| `20261017-234006` / `-234407` | 22/24 | 6/6 | 6/6 | 20/24, 22/24 | 0 | $0.00236 / $0.00270 | `draft` = Nova Pro, rest Nova 2 Lite: passes the gate but **no gain** over the baseline (21/24): same t06/t07 misses every run; run 1 added t03 (`claim check returned no result`) and t11 auto-sent a confused non-answer. Pro's `draft` stage costs about 2.1× Lite's ($0.0015 vs $0.0007). Verdict: keep Nova 2 Lite |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)
+
+## Dashboard (Grafana, 2026-10-18)
+
+Grafana 11.2 runs in its own compose project (`dashboard/`), joined to the `n8n-stack_default` network so it reaches
+Postgres by service name (Postgres is bound to loopback on the host). It is served on the tailnet only at
+`https://raspberrypi.tailf7a7bf.ts.net:8443` (`tailscale serve --https=8443`; undo with `--https=8443 off`).
+Datasource and dashboard are provisioned from files, so the dashboard JSON in git is the source of truth
+(`allowUiUpdates: false`; edit the JSON, not the UI).
+
+- **Read-only login:** `schema/dashboard_role.sql` creates `grafana_ro`, granted SELECT on the six `stats_*` views and
+  nothing else (verified: denied on `enquiry`, no write privilege, `default_transaction_read_only = on`). Views carry no
+  email, subject or body.
+- **Panels:** dead letter, stuck, failures 24h, awaiting review, average cost per enquiry, last processed; enquiries per
+  day by outcome; why replies were blocked; spend per day; the review queue. A **Traffic** variable filters real vs
+  scoring-run (`is_test`) rows; it defaults to both because every enquiry so far is synthetic.
+- **Passwords** are in `dashboard/.env` (gitignored; `.env.example` shows the names). Not in any committed file.
+- Every panel query was run through the Grafana API and returned rows before it was committed.
 
 ## Open issues
 
@@ -348,6 +366,7 @@ is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke 
 - **Scoring is strict on purpose:** `blocked` ≠ `escalate` (t06 counts as a miss though both reach a human).
 - **t15 / t23 categories** still wrong (past-paper bank, US admissions → course_content) — replies are correct.
 - **Nothing is sent automatically.** Approve creates a Gmail draft (decision 17); a person presses Send. Reading a real inbox is the next step, ideally for a pilot.
+- **Drift risk:** the classifier schema is in the `build classify request` node (live) and `schema/classification.schema.json` (documentation only; nothing reads it); they already differ in `summary.maxLength` and the `confidence` description. `parse classification` also does not validate `required` fields or enums. Planned: a note in the file plus `test/check_schema.py` (structural compare; could also cover the `facts` node vs `kb/facts.yaml`).
 - `score.py`: no error-type counts (503 / 429 / timeout); stale `--psql` docstring example.
 - Repo cleanup done 2026-10-17: removed the session-1 answer key (`workflows/01-intake.json`, still in git history) and the scratch `test/test.json`.
 

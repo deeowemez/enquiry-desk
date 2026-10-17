@@ -14,6 +14,7 @@ builder works on a staging copy, and a person promotes a change to production.
     python3 test/staging.py set-model classify=apac.amazon.nova-micro-v1:0 [draft=... verify=... clarify=... | all=...]
     python3 test/staging.py promote        # SHOW what would change in the LIVE intake workflow (read-only)
     python3 test/staging.py promote --yes  # a PERSON runs this: back up live, apply staging's graph, publish
+                                           # (refuses during a sweep, or when staging holds a non-default model: --allow-models)
     python3 test/staging.py rollback --yes # put the latest pre-promotion backup back and publish it
 
 What differs from production (everything else is a straight copy):
@@ -40,6 +41,7 @@ PROD = {"intake": "9OtHm7FyRtNdUl1p", "errors": "BSmcb09mPBarqPjO"}
 SUFFIX = " (STAGING)"
 BACKUPS = pathlib.Path.home() / ".local" / "state" / "enquiry-desk"   # pre-promotion copies: hold the real chat id, so NOT in git
 STAGES = ("classify", "draft", "verify", "clarify")
+DEFAULT_MODEL = "global.amazon.nova-2-lite-v1:0"     # what production runs on every stage unless a person decides otherwise
 SWEEP_LOCK = BACKUPS / "sweep.lock"      # written by test/sweep.py while an experiment owns staging
 STAGING_PATH = "enquiry-staging"
 # The public API rejects unknown settings keys (e.g. binaryMode, availableInMCP), so allow-list.
@@ -254,10 +256,19 @@ def cmd_promote(args):
     if not st:
         sys.exit("No staging.json yet. Run `create` first.")
     live = api("GET", f"/workflows/{PROD['intake']}")
-    body = live_from_staging(api("GET", f"/workflows/{st['intake']}"), live)
+    stg_w = api("GET", f"/workflows/{st['intake']}")
+    body = live_from_staging(stg_w, live)
     old = {n["name"]: n for n in live["nodes"]}
     changed = [n["name"] for n in body["nodes"] if n != old[n["name"]]]
     print(f"live: {live['name']} (active={live['active']}, updated {live['updatedAt']})")
+    sm_live, sm_stg = stage_models(live), stage_models(stg_w)
+    short = lambda m: (m or "(none)").replace("global.amazon.", "").replace("apac.amazon.", "").replace("-v1:0", "")
+    print("stage models, live    :", ", ".join(f"{s}={short(sm_live.get(s + '_model'))}" for s in STAGES))
+    print("stage models, staging :", ", ".join(f"{s}={short(sm_stg.get(s + '_model'))}" for s in STAGES))
+    experimental = {s: sm_stg.get(s + "_model") for s in STAGES if sm_stg.get(s + "_model") not in (DEFAULT_MODEL, None)}
+    if experimental:
+        print(f"WARNING: staging runs a non-default model on {', '.join(experimental)}. That is probably an experiment, "
+              "not a finished change.")
     print(f"{len(changed)} node(s) would change:", ", ".join(changed) or "none")
     if body["connections"] != live["connections"]:
         print("connections would change too")
@@ -267,6 +278,13 @@ def cmd_promote(args):
     if "--yes" not in args:
         print("\nRead-only so far. To apply and publish: promote --yes")
         return
+    if sweep_running():
+        sys.exit("A sweep is running, so staging is mid-experiment and promoting now could ship an experimental model to production.\n"
+                 "`python3 test/sweep.py stop` first (it restores staging), then promote.")
+    if experimental and "--allow-models" not in args:
+        sys.exit(f"Refusing: staging runs a non-default model on {', '.join(experimental)}. Promoting an experiment to production is how "
+                 "classify ended up on Nova Micro. Put staging back (`sweep.py restore`, or `set-model all=2lite`), or, if this really "
+                 "is the model set you want live, add --allow-models.")
     BACKUPS.mkdir(parents=True, exist_ok=True)
     backup = BACKUPS / f"promote-{datetime.datetime.now(datetime.timezone.utc):%Y%m%d-%H%M%S}.json"
     backup.write_text(json.dumps(live))

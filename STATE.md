@@ -55,7 +55,9 @@ works; cloud routines can't reach the tailnet-only n8n). What exists:
 - **Baseline** = `20261017-082124` (staging, Nova 2 Lite on all four calls, per-stage config, corrected prices):
   category 22/24, flags 6/6, slots 6/6, actions 21/24, 0 invented, $0.002401. Run #2 (`20261017-082529`) matched it
   with cost $0.002191, so cost varies ~±5% between runs. It replaced the first baseline (`20261017-075031`, old prices).
-- **Promotion** is `python3 test/staging.py promote` (read-only plan) then `promote --yes`, run **by a person**: it
+- **Promotion** is `python3 test/staging.py promote` (read-only plan: shows each stage's model on live and on staging) then
+  `promote --yes`, run **by a person**. It **refuses** while a sweep runs, and when staging holds a non-default model unless
+  `--allow-models`. It
   backs up live to `~/.local/state/enquiry-desk/`, applies staging's graph with live's webhook path/ids/Telegram state,
   publishes, and checks settings survived; `rollback --yes` undoes it. The agent's permission layer blocks production
   deploys, so an agent can plan a promotion but not apply it.
@@ -388,6 +390,12 @@ in intake + errors) → commit **without** an attribution trailer.
   `aws ce get-cost-and-usage … --filter '{"Dimensions":{"Key":"RECORD_TYPE","Values":["Usage"]}}' --group-by Type=DIMENSION,Key=USAGE_TYPE`
   with the `sandbox-26` profile. Prices: `aws pricing get-products --service-code AmazonBedrock --region us-east-1 --filters
   Type=TERM_MATCH,Field=usagetype,Value=APS1-NovaLite-input-tokens` (filtering by `regionCode` returns 100 products a page and my `--max-results` + `--starting-token` paging failed; an exact usage-type query is simpler).
+- **Incident, 2026-10-17: production ran `classify` on Nova Micro for a while.** `promote --yes` copied staging exactly as it was at
+  that moment, and staging's `classify` was set to Micro by a comparison run that was in progress. The plan only listed node names, so
+  the model change was invisible. Impact: **none** (0 executions on the live workflow after the promotion; its last execution was a
+  manual run on 2026-10-12), found by comparing live and staging before re-promoting. Fixes: the plan now prints stage models for live
+  and staging, `--yes` refuses during a sweep or with a non-default model, and the guards are tested against stubbed workflows.
+  **Lesson:** a promotion tool must never copy transient experiment state, and a plan must show the thing most likely to be wrong.
 - **Don't hand-roll background jobs, and don't `pkill -f` a pattern that appears in your own command line** (it killed the shell that
   ran it). An interrupted tool call does **not** stop a job it already detached. `test/sweep.py` exists to avoid both: lock, `stop`,
   restore. To find a process without matching yourself: `pgrep -af "[s]weep.py"`.

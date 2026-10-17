@@ -6,6 +6,7 @@ An automated builder that edits the live workflow can only test its change by pu
 builder works on a staging copy, and a person promotes a change to production.
 
     python3 test/staging.py create    # first time: clone the live intake + errors workflows
+    python3 test/staging.py create-review # clone the live human-review workflow too (paths review-staging / review-act-staging)
     python3 test/staging.py sync --yes   # overwrite staging with the live workflows' current draft (discards
                                          # un-promoted staging work: `export` first)
     python3 test/staging.py status    # show ids, active state and the staging webhook path
@@ -13,10 +14,11 @@ builder works on a staging copy, and a person promotes a change to production.
     python3 test/staging.py export --live   # the LIVE intake -> workflows/01-intake.mine.json (read-only on n8n)
     python3 test/staging.py models    # which model each stage uses on staging
     python3 test/staging.py set-model classify=apac.amazon.nova-micro-v1:0 [draft=... verify=... clarify=... | all=...]
-    python3 test/staging.py promote        # SHOW what would change in the LIVE intake workflow (read-only)
-    python3 test/staging.py promote --yes  # a PERSON runs this: back up live, apply staging's graph, publish
+    python3 test/staging.py promote [review]        # SHOW what would change in the LIVE intake (or review) workflow (read-only)
+    python3 test/staging.py promote [review] --yes  # a PERSON runs this: back up live, apply staging's graph, publish
                                            # (refuses during a sweep, or when staging holds a non-default model: --allow-models)
-    python3 test/staging.py rollback --yes # put the latest pre-promotion backup back and publish it
+    python3 test/staging.py rollback [review] --yes # put the latest pre-promotion backup back and publish it
+    export [review] [--live]  # the review workflow exports to workflows/01-review.staging.json (live: 01-review.json)
 
 What differs from production (everything else is a straight copy):
   intake  : webhook path `enquiry-staging`; its error workflow is the staging errors copy;
@@ -38,13 +40,14 @@ import urllib.request
 
 HERE = pathlib.Path(__file__).resolve().parent
 STATE = HERE / "staging.json"
-PROD = {"intake": "9OtHm7FyRtNdUl1p", "errors": "BSmcb09mPBarqPjO"}
+PROD = {"intake": "9OtHm7FyRtNdUl1p", "errors": "BSmcb09mPBarqPjO", "review": "QQEDcUxU7OJIeNn3"}
 SUFFIX = " (STAGING)"
 BACKUPS = pathlib.Path.home() / ".local" / "state" / "enquiry-desk"   # pre-promotion copies: hold the real chat id, so NOT in git
 STAGES = ("classify", "draft", "verify", "clarify")
 DEFAULT_MODEL = "global.amazon.nova-2-lite-v1:0"     # what production runs on every stage unless a person decides otherwise
 SWEEP_LOCK = BACKUPS / "sweep.lock"      # written by test/sweep.py while an experiment owns staging
 STAGING_PATH = "enquiry-staging"
+REVIEW_PATHS = {"review": "review-staging", "review-act": "review-act-staging"}   # live webhook path -> staging path
 # The public API rejects unknown settings keys (e.g. binaryMode, availableInMCP), so allow-list.
 SETTINGS_OK = ("executionOrder", "saveDataSuccessExecution", "saveDataErrorExecution",
                "saveManualExecutions", "saveExecutionProgress", "executionTimeout",
@@ -105,6 +108,23 @@ def build_intake(live, errors_id):
             n["parameters"]["path"] = STAGING_PATH
         if n["type"].endswith(".telegram"):
             n["disabled"] = True
+        if n["name"] == "config":      # staging's review links must open the STAGING review page
+            for a in n["parameters"]["assignments"]["assignments"]:
+                if a["name"] == "review_base_url" and a["value"].rstrip("/").endswith("/review"):
+                    a["value"] = a["value"].rstrip("/") + "-staging"
+    return body
+
+
+def build_review(live):
+    """The human-review workflow, re-pointed at staging paths (the page's form and back link included)."""
+    body = clean(live, live["name"] + SUFFIX, live.get("settings") or {})
+    for n in body["nodes"]:
+        if n["type"].endswith(".webhook") and n["parameters"].get("path") in REVIEW_PATHS:
+            n["parameters"]["path"] = REVIEW_PATHS[n["parameters"]["path"]]
+        if n["type"].endswith(".code") and "jsCode" in n["parameters"]:
+            c = n["parameters"]["jsCode"]
+            c = c.replace('action="review-act"', 'action="review-act-staging"').replace('href="review?id=', 'href="review-staging?id=')
+            n["parameters"]["jsCode"] = c
     return body
 
 
@@ -127,6 +147,19 @@ def cmd_create(args):
     print(f"created: intake {intake['id']}, errors {errors['id']}\nwebhook path: /webhook/{STAGING_PATH}")
 
 
+def cmd_create_review(args):
+    st = load_state()
+    if not st:
+        sys.exit("No staging.json yet. Run `create` first.")
+    if st.get("review"):
+        sys.exit(f"A staging review workflow already exists ({st['review']}). Use `sync --yes`.")
+    rev = api("POST", "/workflows", build_review(api("GET", f"/workflows/{PROD['review']}")))
+    publish(rev["id"])
+    st["review"] = rev["id"]
+    STATE.write_text(json.dumps(st, indent=2) + "\n")
+    print(f"created staging review {rev['id']}: /webhook/review-staging and /webhook/review-act-staging")
+
+
 def cmd_sync(args):
     st = load_state()
     if not st:
@@ -141,6 +174,9 @@ def cmd_sync(args):
     i = api("PUT", f"/workflows/{st['intake']}",
             build_intake(api("GET", f"/workflows/{PROD['intake']}"), st["errors"]))
     publish(st["intake"])
+    if st.get("review"):
+        put(st["review"], build_review(api("GET", f"/workflows/{PROD['review']}")))
+        publish(st["review"])
     print(f"synced staging from live: intake {st['intake']} ({len(i['nodes'])} nodes), "
           f"errors {st['errors']} ({len(e['nodes'])} nodes)")
 
@@ -152,15 +188,18 @@ def cmd_export(args):
     This is also how a change gets promoted: a person imports this file into the live workflow, then runs `sync`.
     """
     live = "--live" in args
+    kind = "review" if "review" in args else "intake"
     st = load_state()
-    if not live and not st:
-        sys.exit("No staging.json yet. Run `create` first.")
-    w = api("GET", f"/workflows/{PROD['intake'] if live else st['intake']}")
+    if not live and not st.get(kind):
+        sys.exit(f"No staging {kind} workflow yet. Run `create`{'-review' if kind == 'review' else ''} first.")
+    w = api("GET", f"/workflows/{PROD[kind] if live else st[kind]}")
     for n in w["nodes"]:
         if n["type"].endswith(".telegram") and "chatId" in n["parameters"]:
             n["parameters"]["chatId"] = "{{ALERT_CHAT_ID}}"
     out = {k: w[k] for k in ("name", "nodes", "pinData", "connections", "settings", "meta") if k in w}
-    path = HERE.parent / "workflows" / ("01-intake.mine.json" if live else "01-intake.staging.json")
+    names = {("intake", True): "01-intake.mine.json", ("intake", False): "01-intake.staging.json",
+             ("review", True): "01-review.json", ("review", False): "01-review.staging.json"}
+    path = HERE.parent / "workflows" / names[(kind, live)]
     path.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
     print(f"wrote {path.relative_to(HERE.parent)} ({len(w['nodes'])} nodes)")
 
@@ -230,16 +269,17 @@ def cmd_set_model(args):
           {s: stage_models(api("GET", f"/workflows/{st['intake']}"))[s + "_model"] for s in STAGES})
 
 
-def live_from_staging(stg, live):
-    """Staging's graph, re-pointed at production: live webhook path and ids, live Telegram state, live error workflow."""
+def live_from_staging(stg, live, kind="intake"):
+    """Staging's graph, re-pointed at production: live webhook paths and ids, live Telegram state, live review link.
+    Returns (body, added, removed): nodes that exist only in staging are added, nodes only in live are dropped."""
     ln = {n["name"]: n for n in live["nodes"]}
-    names = {n["name"] for n in stg["nodes"]}
-    if names != set(ln):
-        sys.exit(f"The node sets differ (only in staging: {sorted(names - set(ln))}; only in live: {sorted(set(ln) - names)}). "
-                 "Promote by hand.")
+    sn = {n["name"] for n in stg["nodes"]}
+    added, removed = sorted(sn - set(ln)), sorted(set(ln) - sn)
     nodes = json.loads(json.dumps(stg["nodes"]))
     for n in nodes:
-        l = ln[n["name"]]
+        l = ln.get(n["name"])
+        if l is None:
+            continue                                  # new in staging: keep as built
         n["id"] = l["id"]
         for k in ("webhookId", "disabled"):
             if k in l:
@@ -250,37 +290,55 @@ def live_from_staging(stg, live):
             n["parameters"]["path"] = l["parameters"]["path"]
         if n["type"].endswith(".telegram"):
             n["parameters"]["chatId"] = l["parameters"].get("chatId")
-    return {"name": live["name"], "nodes": nodes, "connections": stg["connections"], "settings": live.get("settings") or {}}
+        if kind == "intake" and n["name"] == "config":     # live keeps pointing at the LIVE review page
+            lv = {a["name"]: a["value"] for a in l["parameters"]["assignments"]["assignments"]}
+            for a in n["parameters"]["assignments"]["assignments"]:
+                if a["name"] == "review_base_url" and "review_base_url" in lv:
+                    a["value"] = lv["review_base_url"]
+        if kind == "review" and n["type"].endswith(".code") and "jsCode" in n["parameters"]:
+            n["parameters"]["jsCode"] = (n["parameters"]["jsCode"].replace("review-act-staging", "review-act")
+                                         .replace("review-staging?id=", "review?id="))
+    body = {"name": live["name"], "nodes": nodes, "connections": stg["connections"], "settings": live.get("settings") or {}}
+    return body, added, removed
+
+
+def backup_glob(kind):
+    return "promote-review-*.json" if kind == "review" else "promote-2*.json"
 
 
 def cmd_promote(args):
     st = load_state()
-    if not st:
-        sys.exit("No staging.json yet. Run `create` first.")
-    live = api("GET", f"/workflows/{PROD['intake']}")
-    stg_w = api("GET", f"/workflows/{st['intake']}")
-    body = live_from_staging(stg_w, live)
+    kind = "review" if "review" in args else "intake"
+    if not st or not st.get(kind):
+        sys.exit(f"No staging {kind} workflow yet.")
+    live = api("GET", f"/workflows/{PROD[kind]}")
+    stg_w = api("GET", f"/workflows/{st[kind]}")
+    body, added, removed = live_from_staging(stg_w, live, kind)
     old = {n["name"]: n for n in live["nodes"]}
-    changed = [n["name"] for n in body["nodes"] if n != old[n["name"]]]
+    changed = [n["name"] for n in body["nodes"] if n != old.get(n["name"])]
     print(f"live: {live['name']} (active={live['active']}, updated {live['updatedAt']})")
-    sm_live, sm_stg = stage_models(live), stage_models(stg_w)
-    short = lambda m: (m or "(none)").replace("global.amazon.", "").replace("apac.amazon.", "").replace("-v1:0", "")
-    print("stage models, live    :", ", ".join(f"{s}={short(sm_live.get(s + '_model'))}" for s in STAGES))
-    print("stage models, staging :", ", ".join(f"{s}={short(sm_stg.get(s + '_model'))}" for s in STAGES))
-    experimental = {s: sm_stg.get(s + "_model") for s in STAGES if sm_stg.get(s + "_model") not in (DEFAULT_MODEL, None)}
-    if experimental:
-        print(f"WARNING: staging runs a non-default model on {', '.join(experimental)}. That is probably an experiment, "
-              "not a finished change.")
+    experimental = {}
+    if kind == "intake":
+        sm_live, sm_stg = stage_models(live), stage_models(stg_w)
+        short = lambda m: (m or "(none)").replace("global.amazon.", "").replace("apac.amazon.", "").replace("-v1:0", "")
+        print("stage models, live    :", ", ".join(f"{s}={short(sm_live.get(s + '_model'))}" for s in STAGES))
+        print("stage models, staging :", ", ".join(f"{s}={short(sm_stg.get(s + '_model'))}" for s in STAGES))
+        experimental = {s: sm_stg.get(s + "_model") for s in STAGES if sm_stg.get(s + "_model") not in (DEFAULT_MODEL, None)}
+        if experimental:
+            print(f"WARNING: staging runs a non-default model on {', '.join(experimental)}. That is probably an experiment, "
+                  "not a finished change.")
     print(f"{len(changed)} node(s) would change:", ", ".join(changed) or "none")
+    if added or removed:
+        print(f"  added: {', '.join(added) or 'none'} | removed: {', '.join(removed) or 'none'}")
     if body["connections"] != live["connections"]:
         print("connections would change too")
-    if not changed and body["connections"] == live["connections"]:
+    if not changed and not removed and body["connections"] == live["connections"]:
         print("Nothing to promote.")
         return
     if "--yes" not in args:
-        print("\nRead-only so far. To apply and publish: promote --yes")
+        print(f"\nRead-only so far. To apply and publish: promote{' review' if kind == 'review' else ''} --yes")
         return
-    if sweep_running():
+    if kind == "intake" and sweep_running():
         sys.exit("A sweep is running, so staging is mid-experiment and promoting now could ship an experimental model to production.\n"
                  "`python3 test/sweep.py stop` first (it restores staging), then promote.")
     if experimental and "--allow-models" not in args:
@@ -288,28 +346,30 @@ def cmd_promote(args):
                  "classify ended up on Nova Micro. Put staging back (`sweep.py restore`, or `set-model all=2lite`), or, if this really "
                  "is the model set you want live, add --allow-models.")
     BACKUPS.mkdir(parents=True, exist_ok=True)
-    backup = BACKUPS / f"promote-{datetime.datetime.now(datetime.timezone.utc):%Y%m%d-%H%M%S}.json"
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    backup = BACKUPS / (f"promote-review-{stamp}.json" if kind == "review" else f"promote-{stamp}.json")
     backup.write_text(json.dumps(live))
     backup.chmod(0o600)
     print(f"backup of live before the change: {backup}")
-    put(PROD["intake"], body)
-    publish(PROD["intake"])
-    after = api("GET", f"/workflows/{PROD['intake']}")
+    put(PROD[kind], body)
+    publish(PROD[kind])
+    after = api("GET", f"/workflows/{PROD[kind]}")
     print(f"promoted and published: {len(after['nodes'])} nodes, active={after['active']}")
     print("settings unchanged" if after["settings"] == live["settings"] else
           f"WARNING settings differ\n  before: {live['settings']}\n  after:  {after['settings']}")
-    print("undo with: python3 test/staging.py rollback --yes")
+    print(f"undo with: python3 test/staging.py rollback{' review' if kind == 'review' else ''} --yes")
 
 
 def cmd_rollback(args):
-    files = sorted(BACKUPS.glob("promote-*.json")) if BACKUPS.exists() else []
+    kind = "review" if "review" in args else "intake"
+    files = sorted(BACKUPS.glob(backup_glob(kind))) if BACKUPS.exists() else []
     if not files:
-        sys.exit("No pre-promotion backup found.")
+        sys.exit(f"No pre-promotion backup found for the {kind} workflow.")
     latest = files[-1]
     if "--yes" not in args:
-        sys.exit(f"Would restore {latest.name} to the LIVE intake workflow and publish it. Add --yes to do it.")
-    put(PROD["intake"], json.loads(latest.read_text()))
-    publish(PROD["intake"])
+        sys.exit(f"Would restore {latest.name} to the LIVE {kind} workflow and publish it. Add --yes to do it.")
+    put(PROD[kind], json.loads(latest.read_text()))
+    publish(PROD[kind])
     print(f"restored {latest.name} and published")
 
 
@@ -318,14 +378,16 @@ def cmd_status(args):
     if not st:
         print("No staging copy yet. Run `create`.")
         return
-    for k in ("intake", "errors"):
+    for k in ("intake", "errors", "review"):
+        if not st.get(k):
+            continue
         w = api("GET", f"/workflows/{st[k]}")
         print(f"{k:7} {st[k]}  active={w.get('active')}  nodes={len(w['nodes'])}  updated={w.get('updatedAt')}")
     print(f"webhook path: /webhook/{st['webhook_path']}")
 
 
 if __name__ == "__main__":
-    cmds = {"create": cmd_create, "sync": cmd_sync, "status": cmd_status, "export": cmd_export, "models": cmd_models,
+    cmds = {"create": cmd_create, "create-review": cmd_create_review, "sync": cmd_sync, "status": cmd_status, "export": cmd_export, "models": cmd_models,
             "set-model": cmd_set_model, "promote": cmd_promote, "rollback": cmd_rollback}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         sys.exit(__doc__)

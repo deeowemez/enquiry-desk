@@ -73,6 +73,13 @@ alter table enquiry add column if not exists review_status text
 alter table enquiry add column if not exists review_token text;
 alter table enquiry add column if not exists reviewed_at timestamptz;
 alter table reply add column if not exists approved_at timestamptz;
+
+-- Outbound (2026-10-17): an approved reply becomes a DRAFT in the business Gmail inbox, never an auto-send.
+-- drafted_at / gmail_draft_id record the draft; draft_error records why one could not be created.
+-- sent_at stays null: a person presses Send in Gmail.
+alter table reply add column if not exists drafted_at timestamptz;
+alter table reply add column if not exists gmail_draft_id text;
+alter table reply add column if not exists draft_error text;
 create index if not exists enquiry_review_pending_idx on enquiry (received_at) where review_status = 'pending';
 
 -- Dashboard views. Every dashboard number is defined here, once, so Grafana / React / the README all

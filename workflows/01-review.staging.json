@@ -1,0 +1,449 @@
+{
+  "name": "01 Enquiry Desk - review (STAGING)",
+  "nodes": [
+    {
+      "id": "rv-get",
+      "name": "review page",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "GET /webhook/review?id&t - read-only. Tailnet only (Tailscale Serve, not Funnel)",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "review-staging",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "069eab94-c0ed-43af-8036-1181de0f0812"
+    },
+    {
+      "id": "rv-q",
+      "name": "read query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "jsCode": "// Review links carry the enquiry id and its random review token. Anything malformed becomes a\n// harmless lookup that matches nothing (and never reaches a ::uuid cast that would throw).\nconst q = $json.query ?? {};\nconst ok = /^[0-9a-f-]{36}$/i.test(q.id ?? '') && /^[0-9a-f]{32}$/i.test(q.t ?? '');\nreturn [{ json: { id: ok ? q.id : '00000000-0000-0000-0000-000000000000', t: ok ? q.t : 'invalid' } }];\n"
+      }
+    },
+    {
+      "id": "rv-load",
+      "name": "load enquiry",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "Only matches when id AND the random review token agree. Always outputs (empty = unknown link -> 404 page)",
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select e.id, e.category, e.action, e.body, e.review_status,\n       to_char(e.received_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI \"UTC\"') as received_at,\n       to_char(e.reviewed_at at time zone 'UTC', 'YYYY-MM-DD HH24:MI \"UTC\"') as reviewed_at,\n       coalesce(r.body, '') as draft,\n       coalesce(nullif(r.block_reason, ''),\n                'Routed to a person: ' || case when e.safety_flags::text not in ('[]', '[\"none\"]')\n                                               then 'safety flags ' || e.safety_flags::text\n                                               else e.category end) as reason\n  from enquiry e\n  left join lateral (select body, block_reason from reply where enquiry_id = e.id\n                      order by approved_at desc nulls last limit 1) r on true\n where e.id = $1::uuid and e.review_token = $2;",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $json.t ] }}"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "rv-page",
+      "name": "render page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "HTML page; every DB value escaped. Approve only when there is a draft",
+      "parameters": {
+        "jsCode": "// The review page. Everything from the database is escaped - enquiry and draft text are untrusted.\nconst esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst row = $input.first()?.json ?? {};\nconst { id, t } = $('read query').first().json;\nconst page = (title, inner) => `<!doctype html><html><head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>${esc(title)}</title>\n<style>body{font:16px/1.45 system-ui,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111;background:#fafafa}\nh1{font-size:20px}.card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:12px 14px;margin:12px 0}\n.k{color:#666;font-size:13px}.why{background:#fff4e5;border-color:#f0b35a}pre{white-space:pre-wrap;font:inherit;margin:4px 0}\nbutton{font-size:17px;padding:12px 16px;border-radius:10px;border:0;margin:6px 6px 0 0}\n.ok{background:#1a7f37;color:#fff}.take{background:#444;color:#fff}.done{color:#1a7f37;font-weight:600}</style></head>\n<body>${inner}</body></html>`;\n\nif (!row.id) {\n  return [{ json: { status: 404, html: page('Not found', '<h1>Link not valid</h1><p>This review link is unknown or has expired.</p>') } }];\n}\nconst pending = row.review_status === 'pending';\nconst hasDraft = String(row.draft ?? '').trim() !== '';\nconst form = (what, label, cls) => `<form method=\"post\" action=\"review-act-staging\" style=\"display:inline\">\n<input type=\"hidden\" name=\"id\" value=\"${esc(id)}\"><input type=\"hidden\" name=\"t\" value=\"${esc(t)}\">\n<input type=\"hidden\" name=\"do\" value=\"${what}\"><button class=\"${cls}\">${label}</button></form>`;\n\nconst inner = `<h1>Enquiry review</h1>\n<div class=\"k\">${esc(row.category)} · action <b>${esc(row.action)}</b> · received ${esc(row.received_at)}</div>\n<div class=\"card\"><div class=\"k\">Customer wrote</div><pre>${esc(row.body)}</pre></div>\n${hasDraft ? `<div class=\"card\"><div class=\"k\">Drafted reply (not sent)</div><pre>${esc(row.draft)}</pre></div>`\n           : `<div class=\"card\"><div class=\"k\">No AI draft</div>Escalated before drafting — a person writes this one.</div>`}\n${row.reason ? `<div class=\"card why\"><div class=\"k\">Why it needs a human</div>${esc(row.reason)}</div>` : ''}\n${pending\n  ? (hasDraft ? form('approve', 'Approve draft', 'ok') : '') + form('takeover', 'Take over', 'take')\n  : `<p class=\"done\">Already reviewed: ${esc(row.review_status)}${row.reviewed_at ? ' (' + esc(row.reviewed_at) + ')' : ''}</p>`}`;\nreturn [{ json: { status: 200, html: page('Enquiry review', inner) } }];\n"
+      }
+    },
+    {
+      "id": "respond-page",
+      "name": "respond page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        896,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "200 page, or 404 for an unknown link",
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": "={{ $json.status }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "rv-post",
+      "name": "review action",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "POST /webhook/review-act from the page's buttons. GET never changes anything",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "review-act-staging",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "1f8aa240-7068-49ef-a2f8-4cce2a27be99"
+    },
+    {
+      "id": "rv-f",
+      "name": "read form",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// The Approve / Take over form posts id, t and do. Validate before anything touches the database.\nconst b = $json.body ?? {};\nconst ok = /^[0-9a-f-]{36}$/i.test(b.id ?? '') && /^[0-9a-f]{32}$/i.test(b.t ?? '') && ['approve', 'takeover'].includes(b.do);\nreturn [{ json: { id: ok ? b.id : '00000000-0000-0000-0000-000000000000', t: ok ? b.t : 'invalid', do: ok ? b.do : 'none' } }];\n"
+      }
+    },
+    {
+      "id": "rv-apply",
+      "name": "apply decision",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        448,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "Only a PENDING enquiry with a matching token changes. Approve needs a draft. Logged in run_log. Always outputs (empty = nothing changed)",
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with e as (\n  update enquiry\n     set review_status = case when $3 = 'approve' then 'approved' else 'taken_over' end,\n         reviewed_at = now()\n   where id = $1::uuid and review_token = $2 and review_status = 'pending'\n     and ($3 = 'takeover' or ($3 = 'approve' and exists (select 1 from reply where enquiry_id = enquiry.id and body <> '')))\n  returning id, review_status\n), r as (\n  update reply set approved_at = now() where enquiry_id in (select id from e) and $3 = 'approve' returning 1\n), l as (\n  insert into run_log (enquiry_id, stage, status, attempt, error)\n  select id, 'review', 'ok', 1, review_status from e returning 1\n)\nselect e.id, e.review_status,\n       case when e.review_status = 'approved'\n            then (select rp.body from reply rp where rp.enquiry_id = e.id and rp.body <> '' limit 1) end as reply_body,\n       (select q2.from_email from enquiry q2 where q2.id = e.id) as from_email,\n       (select q2.subject from enquiry q2 where q2.id = e.id) as subject\n  from e;",
+        "options": {
+          "queryReplacement": "={{ [ $json.id, $json.t, $json.do ] }}"
+        }
+      },
+      "alwaysOutputData": true
+    },
+    {
+      "id": "rv-res",
+      "name": "render result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst row = $('apply decision').first()?.json ?? {};\nconst { id, t } = $('read form').first().json;\nlet drafted = null;\ntry { drafted = $('record draft').first()?.json ?? null; } catch (e) { /* the draft step did not run */ }\nlet msg;\nif (!row.id) {\n  msg = '<h1>Nothing changed</h1><p>Already reviewed, no draft to approve, or the link is not valid.</p>';\n} else if (row.review_status !== 'approved') {\n  msg = '<h1>Taken over ✓</h1><p>Marked for a person to write the reply.</p>';\n} else if (drafted && drafted.gmail_draft_id) {\n  msg = '<h1 style=\"color:#1a7f37\">Approved ✓</h1><p>A draft reply is waiting in the business Gmail inbox, addressed to <b>' + esc(row.from_email) +\n        '</b>. <b>Nothing has been sent</b>: a person reviews it there and presses Send.</p>';\n} else {\n  msg = '<h1 style=\"color:#9a6700\">Approved, but the Gmail draft could not be created</h1><p>The reply is approved and stored; copy it from the review page. ' +\n        'Nothing was sent.</p><p><small>Reason: ' + esc(drafted?.draft_error || 'unknown') + '</small></p>';\n}\nconst back = row.id || /^[0-9a-f]{32}$/.test(t) ? `<p><a href=\"review-staging?id=${esc(id)}&t=${esc(t)}\">Back to the enquiry</a></p>` : '';\nreturn [{ json: { status: row.id ? 200 : 409, html: `<!doctype html><html><head><meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Review</title>\n<style>body{font:16px/1.45 system-ui,sans-serif;max-width:640px;margin:0 auto;padding:16px}</style></head>\n<body>${msg}${back}</body></html>` } }];"
+      }
+    },
+    {
+      "id": "respond-result",
+      "name": "respond result",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1568,
+        300
+      ],
+      "notesInFlow": true,
+      "notes": "200 done, or 409 nothing changed",
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseCode": "={{ $json.status }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "rv-note",
+      "name": "Note review",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        -300
+      ],
+      "parameters": {
+        "color": 4,
+        "width": 1120,
+        "height": 260,
+        "content": "## Enquiry Desk — human review\n\nEscalated and blocked enquiries get a Telegram message with an **Open review** link (no customer data in Telegram). The page shows the enquiry, the draft and why it needs a person, with **Approve draft** / **Take over**.\n\n- Reachable on the **tailnet only** — the phone needs Tailscale. Nothing is public.\n- Each enquiry has a random `review_token`; id + token must match. Buttons POST — opening a link changes nothing.\n- Approve sets `reply.approved_at`. **Nothing is emailed**: `sent_at` stays empty until a real outbound channel exists."
+      }
+    },
+    {
+      "id": "c1bc4c76-1850-4c84-88d9-62bd4b07aab4",
+      "name": "draft needed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "draft-needed",
+              "leftValue": "={{ $json.review_status === 'approved' && !!$json.reply_body }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notesInFlow": true,
+      "notes": "Only an APPROVED reply with a body becomes a Gmail draft. Take over, or nothing changed, skips it"
+    },
+    {
+      "id": "70e6a9e9-1414-4aac-a071-9d0c5d64e808",
+      "name": "create gmail draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        500
+      ],
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "={{ 'Re: ' + (($json.subject || '').trim() || 'your enquiry to Meridian Tutors') }}",
+        "emailType": "text",
+        "message": "={{ $json.reply_body }}",
+        "options": {
+          "sendTo": "={{ $json.from_email }}"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notesInFlow": true,
+      "notes": "DRAFT only, addressed to the customer. Nothing is ever sent: a person presses Send in Gmail. If Gmail fails the approval still stands (see record draft)",
+      "webhookId": "81eb810c-8905-40db-827d-1f264a9bdaa3"
+    },
+    {
+      "id": "b475f04d-6a6b-47f4-a784-402a2e42fdb9",
+      "name": "record draft",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1120,
+        500
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update reply\n   set drafted_at = case when $2::text <> '' then now() end,\n       gmail_draft_id = nullif($2::text, ''),\n       draft_error = nullif($3::text, '')\n where enquiry_id = $1::uuid and body <> ''\nreturning enquiry_id as id, gmail_draft_id, draft_error;",
+        "options": {
+          "queryReplacement": "={{ [ $('apply decision').first().json.id, ($json.id ?? ''), ($json.error ? (typeof $json.error === 'string' ? $json.error : ($json.error.message ?? JSON.stringify($json.error))).slice(0, 300) : '') ] }}"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "Records the Gmail draft id, or why there is none. sent_at is never set here"
+    }
+  ],
+  "pinData": null,
+  "connections": {
+    "review page": {
+      "main": [
+        [
+          {
+            "node": "read query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read query": {
+      "main": [
+        [
+          {
+            "node": "load enquiry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "load enquiry": {
+      "main": [
+        [
+          {
+            "node": "render page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "render page": {
+      "main": [
+        [
+          {
+            "node": "respond page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "review action": {
+      "main": [
+        [
+          {
+            "node": "read form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "read form": {
+      "main": [
+        [
+          {
+            "node": "apply decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "apply decision": {
+      "main": [
+        [
+          {
+            "node": "draft needed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "render result": {
+      "main": [
+        [
+          {
+            "node": "respond result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "draft needed?": {
+      "main": [
+        [
+          {
+            "node": "create gmail draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "render result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "create gmail draft": {
+      "main": [
+        [
+          {
+            "node": "record draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "record draft": {
+      "main": [
+        [
+          {
+            "node": "render result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all"
+  },
+  "meta": null
+}

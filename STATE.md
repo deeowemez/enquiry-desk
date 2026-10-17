@@ -201,6 +201,13 @@ Record in segments, about 4–5 minutes.
     published version, so testing a change on the live workflow means publishing it. Staging (`test/staging.py`)
     removes that: same graph, own webhook path, no Telegram. A change qualifies only if `compare.py --check` passes
     (safety 6/6, 0 invented, 0 failed, accuracy ±1, cost +25%) on two runs. Promotion stays manual.
+17. **Outbound = a Gmail DRAFT on approve, never an auto-send** (2026-10-17). Approving a reply on the review page creates a draft
+    addressed to the customer in the business Gmail inbox; a person reads it there and presses Send. `reply.drafted_at`,
+    `gmail_draft_id` and `draft_error` record the result; `sent_at` stays empty (nothing here ever sends). If Gmail fails the approval
+    still stands and the reviewer sees why. Built on a **staging copy of the review workflow** (`create-review`; `promote review` to
+    go live). Needs a Gmail OAuth2 credential in n8n; use a **dedicated mailbox**, not a personal one (the credential's scopes are broad).
+    Tested on staging without the credential: the failure path (page says "Approved, but the Gmail draft could not be created" and
+    why; database records `draft_error`), plus repeat approve → "Nothing changed", take over, and a bad token → rejected.
 
 ## Model strategy (decided 2026-10-14)
 

@@ -40,6 +40,7 @@ PROD = {"intake": "9OtHm7FyRtNdUl1p", "errors": "BSmcb09mPBarqPjO"}
 SUFFIX = " (STAGING)"
 BACKUPS = pathlib.Path.home() / ".local" / "state" / "enquiry-desk"   # pre-promotion copies: hold the real chat id, so NOT in git
 STAGES = ("classify", "draft", "verify", "clarify")
+SWEEP_LOCK = BACKUPS / "sweep.lock"      # written by test/sweep.py while an experiment owns staging
 STAGING_PATH = "enquiry-staging"
 # The public API rejects unknown settings keys (e.g. binaryMode, availableInMCP), so allow-list.
 SETTINGS_OK = ("executionOrder", "saveDataSuccessExecution", "saveDataErrorExecution",
@@ -127,6 +128,7 @@ def cmd_sync(args):
     st = load_state()
     if not st:
         sys.exit("No staging.json yet. Run `create` first.")
+    refuse_during_sweep("sync")
     if "--yes" not in args:
         sys.exit("`sync` OVERWRITES staging with the live workflows, discarding any change that has not been promoted.\n"
                  "Run `export` first if staging holds work you want to keep, then `sync --yes`.")
@@ -159,6 +161,23 @@ def cmd_export(args):
     print(f"wrote {path.relative_to(HERE.parent)} ({len(w['nodes'])} nodes)")
 
 
+def sweep_running():
+    """The lock info if a sweep (test/sweep.py) is alive and owns staging, else None. A dead pid means a stale lock."""
+    try:
+        info = json.loads(SWEEP_LOCK.read_text())
+        os.kill(info["pid"], 0)
+        return info
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def refuse_during_sweep(what):
+    info = sweep_running()
+    if info and os.environ.get("ENQUIRY_SWEEP") != "1":
+        sys.exit(f"A sweep is running (pid {info['pid']}, started {info.get('started')}); `{what}` would change staging under it.\n"
+                 "Use `python3 test/sweep.py status`, or `python3 test/sweep.py stop` first.")
+
+
 def put(wid, body):
     """Update a workflow with a body the public API accepts (settings allow-listed)."""
     api("PUT", f"/workflows/{wid}", {"name": body["name"], "nodes": body["nodes"], "connections": body["connections"],
@@ -185,6 +204,7 @@ def cmd_set_model(args):
     st = load_state()
     if not st or not args:
         sys.exit("usage: set-model classify=<model id> [draft=... verify=... clarify=... | all=...]")
+    refuse_during_sweep("set-model")
     w = api("GET", f"/workflows/{st['intake']}")
     cfg = next(n for n in w["nodes"] if n["name"] == "config")["parameters"]["assignments"]["assignments"]
     prices = json.loads(next(a["value"] for a in cfg if a["name"] == "model_prices"))

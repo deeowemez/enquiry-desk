@@ -59,9 +59,12 @@ works; cloud routines can't reach the tailnet-only n8n). What exists:
   backs up live to `~/.local/state/enquiry-desk/`, applies staging's graph with live's webhook path/ids/Telegram state,
   publishes, and checks settings survived; `rollback --yes` undoes it. The agent's permission layer blocks production
   deploys, so an agent can plan a promotion but not apply it.
-- **Trying a model:** `staging.py models` shows each stage's model; `set-model classify=apac.amazon.nova-micro-v1:0`
-  changes one (only models priced in `config.model_prices` are accepted). Then `score.py --webhook "$STAGING" --label …`
-  and `compare.py --check`.
+- **Trying a model:** `staging.py models` shows each stage's model and `set-model stage=model` changes one (only models priced
+  in `config.model_prices`). For anything beyond a single run use **`test/sweep.py`**: `start --exp draft=pro --exp
+  draft=pro,verify=pro --runs 2` (add `--dry-run` first), then `status`, `report`, and `stop` to end it. It takes a lock (so
+  `set-model` and `sync` refuse while it runs), restores staging to Nova 2 Lite on every exit path, gates each full run against the
+  baseline (cost margin +500% by default: accuracy first), and never touches the live workflow. Tested: dry run, double start
+  refused, manual changes refused, `stop` mid-run restores in ~2 s and leaves no results file, a run to completion reports.
 - **Move fallout fixed:** the repo moved to `~/deeowemez/repos/enquiry-desk`; memory folder and the four disabled
   connectors copied to the new project key, and the no-trailer rule is now **rule 7 in `CLAUDE.md`**.
 
@@ -350,6 +353,8 @@ python3 test/staging.py status                     # ids, active state; `sync` r
 STAGING="${WEBHOOK_PROD_URL%/enquiry}/enquiry-staging"
 python3 test/score.py --webhook "$STAGING" --label "my change" \
   --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"
+python3 test/sweep.py start --exp draft=pro --runs 2 --dry-run   # plan an experiment; then without --dry-run
+python3 test/sweep.py status | stop | report
 python3 test/compare.py                            # table of runs
 python3 test/compare.py --check <run>              # gate against test/baseline.json; exit 1 = fail
 ```
@@ -383,6 +388,9 @@ in intake + errors) → commit **without** an attribution trailer.
   `aws ce get-cost-and-usage … --filter '{"Dimensions":{"Key":"RECORD_TYPE","Values":["Usage"]}}' --group-by Type=DIMENSION,Key=USAGE_TYPE`
   with the `sandbox-26` profile. Prices: `aws pricing get-products --service-code AmazonBedrock --region us-east-1 --filters
   Type=TERM_MATCH,Field=usagetype,Value=APS1-NovaLite-input-tokens` (filtering by `regionCode` returns 100 products a page and my `--max-results` + `--starting-token` paging failed; an exact usage-type query is simpler).
+- **Don't hand-roll background jobs, and don't `pkill -f` a pattern that appears in your own command line** (it killed the shell that
+  ran it). An interrupted tool call does **not** stop a job it already detached. `test/sweep.py` exists to avoid both: lock, `stop`,
+  restore. To find a process without matching yourself: `pgrep -af "[s]weep.py"`.
 - **Public API:** publishing is `POST /workflows/{id}/activate` with `{"versionId": …}`; create/update bodies take only
   `name`, `nodes`, `connections`, `settings` and the settings must be allow-listed (see `test/staging.py`); strip
   `webhookId` when cloning or two workflows fight over one webhook; `DELETE` on an inactive workflow is permanent (404).

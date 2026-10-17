@@ -28,6 +28,7 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `test/score.py` | Scorer: posts each case to a **production-mode** webhook (live or staging), reads back the row, reports accuracy. `--label` names the run. `--help` for usage |
 | `test/results/` | One JSONL per scoring run — compare before/after a change |
 | `test/compare.py`, `test/baseline.json` | Table of runs; `--check RUN` gates a run against the baseline (safety, invented claims, failures, accuracy, cost) |
+| `test/sweep.py` | Runs model-comparison experiments on staging with a lock, `stop`, `status`, `report` and a guaranteed restore. **Use it for any multi-run experiment; don't hand-roll background jobs** |
 | `test/staging.py`, `test/staging.json` | Builds/refreshes the **staging copy** of intake + errors (`/webhook/enquiry-staging`, no Telegram). Test changes there; only a person promotes to the live workflow |
 | `test/replay.py` | Re-posts failed enquiries from the `dead_letter` view. `--dry-run` first |
 | `workflows/01-intake.mine.json` | **The live intake workflow** (export after every change) |

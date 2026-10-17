@@ -1,5 +1,5 @@
 {
-  "run": "20261017-075031",
-  "label": "baseline nova-2-lite all stages (staging) #1",
-  "note": "Nova 2 Lite on all four calls, staging copy, 2026-10-17. Run #2 (20261017-075438) scored actions 21/24: the normal +/-1 spread."
+  "run": "20261017-082124",
+  "label": "baseline nova-2-lite x4, per-stage config, corrected prices #1",
+  "note": "Nova 2 Lite on all four calls, staging, 2026-10-17, prices corrected to the AWS list for ap-southeast-1 ($0.41 / $3.39). Run #2 (20261017-082529) scored the same except cost $0.002191. Earlier runs used wrong prices (~36% low): compare cost only within runs made after this point."
 }

@@ -10,11 +10,15 @@ customers are in UTC+8. It classifies each enquiry, answers only from a fact tab
 storing a reply, routes risky cases to a person on their phone, and never loses an enquiry. Runs on **Amazon
 Nova 2 Lite (Bedrock)**, paid from the AWS Free Tier credit ($99, expires 2027-03-09; **rule: credits only**).
 
-Latest full run `20261011-030241`, 24 hand-labelled cases:
+Latest full runs `20261017-082124` / `-082529` (staging, same graph as production), 24 hand-labelled cases:
 
 | Category | Safety flags | Missing slots | **Actions** | Invented claims in sendable replies | Failed runs | Cost / enquiry |
 |---|---|---|---|---|---|---|
-| 22/24 | **6/6** | 6/6 | **23/24** | **0** | 0 | ~$0.0018 |
+| 22/24 | **6/6** | 6/6 | **21/24** (both runs) | **0** | 0 | **~$0.0023** (corrected prices) |
+
+**Cost note:** runs before 2026-10-17 used the wrong per-token price and under-stated cost by ~36% (they show ~$0.0018
+for what is really ~$0.0025). Compare cost only between runs made after the correction. Last run on the *live* workflow:
+`20261011-030241`, 22/24 · 6/6 · 23/24 (23/24 vs 21/24 sits at the edge of the usual ±1–2/24 run-to-run spread; the graph and prompts did not change, only the layout and the per-stage config).
 
 The one action "miss" is t06 → `blocked`: the draft calculated a £190 bundle price and the validator stopped
 it (label says `escalate`; both reach a human). **Nothing is emailed to customers** — approved replies get
@@ -48,9 +52,16 @@ works; cloud routines can't reach the tailnet-only n8n). What exists:
   safety flags all pass · 0 invented claims · 0 failed · category and actions within **±1** of baseline · cost
   within **+25%**. Gate proven both ways (passes a normal run, fails a doctored one). Tolerance and margin are
   flags; I chose the defaults, change them if they feel wrong.
-- **Baseline** = `20261017-075031` (staging, Nova 2 Lite on all four calls): category 22/24, flags 6/6, slots 6/6,
-  actions 22/24, 0 invented, $0.001653. Run #2 (`20261017-075438`) scored actions 21/24 — the normal spread, and
-  it passes the gate. Staging matches production's last run (`20261011-030241`: 22/24 · 6/6 · 23/24).
+- **Baseline** = `20261017-082124` (staging, Nova 2 Lite on all four calls, per-stage config, corrected prices):
+  category 22/24, flags 6/6, slots 6/6, actions 21/24, 0 invented, $0.002401. Run #2 (`20261017-082529`) matched it
+  with cost $0.002191, so cost varies ~±5% between runs. It replaced the first baseline (`20261017-075031`, old prices).
+- **Promotion** is `python3 test/staging.py promote` (read-only plan) then `promote --yes`, run **by a person**: it
+  backs up live to `~/.local/state/enquiry-desk/`, applies staging's graph with live's webhook path/ids/Telegram state,
+  publishes, and checks settings survived; `rollback --yes` undoes it. The agent's permission layer blocks production
+  deploys, so an agent can plan a promotion but not apply it.
+- **Trying a model:** `staging.py models` shows each stage's model; `set-model classify=apac.amazon.nova-micro-v1:0`
+  changes one (only models priced in `config.model_prices` are accepted). Then `score.py --webhook "$STAGING" --label …`
+  and `compare.py --check`.
 - **Move fallout fixed:** the repo moved to `~/deeowemez/repos/enquiry-desk`; memory folder and the four disabled
   connectors copied to the new project key, and the no-trailer rule is now **rule 7 in `CLAUDE.md`**.
 
@@ -197,20 +208,32 @@ Record in segments, about 4–5 minutes.
 - **Decision rule:** a model set qualifies only if **safety flags stay 6/6, invented claims stay 0 and actions
   don't drop**; among those, lowest cost per enquiry wins. Judge on ≥2 runs — run-to-run variance is ±1–2/24.
 
-**Needs building first** (not done): `config` holds one model/URL/price set that every call reads. Split it into
-one entry per stage (`classify` / `draft` / `verify` / `clarify` → URL + model + prices); the four `read …`/`parse …`
-nodes price each call from its own entry; `run_log.model` already records the model per stage. Add `--label` to
-`score.py` so each results file names the model set, and a small compare script (one row per run: label, scores,
-cost). **Check before trusting a small model:** every call relies on a *forced tool call* (`toolChoice`), and
-Micro may not support it or may do it less reliably than Lite.
+**Per-stage config (built 2026-10-17, on staging only until promoted).** The `config` node now holds `bedrock_base`,
+one model per stage (`classify_model`, `draft_model`, `verify_model`, `clarify_model`) and `model_prices`, a JSON table of
+$ per million tokens keyed by model id. To try a model on one stage, edit that stage's `*_model` and nothing else. The
+four HTTP nodes build their URL from their stage's model; each `read …`/`parse …` node prices its call from the table
+and **throws if the model has no entry** (a missing price must fail loudly, never log $0). `run_log.model` now records
+each stage's own model: **before this it recorded the classify model on every row** (an earlier version of this file
+claimed otherwise; it was wrong). `score.py --label` and `compare.py` are built. Export: `test/staging.py export` →
+`workflows/01-intake.staging.json`. **Check before trusting a small model:** every call relies on a *forced tool call*
+(`toolChoice`), and Micro may not support it or may do it less reliably than Lite.
 
 **Titan:** AWS confirms first-party models (Nova, Titan) are standard usage covered by the credit. But on this
 account Titan is **embeddings only** (checked 2026-10-14 in ap-southeast-1, us-east-1, us-west-2: no Titan *text*
 model is offered; the text models are retired). So it can't be one of the four calls. It would fit a future
 "find similar past enquiries" / thread-matching feature (`amazon.titan-embed-text-v2:0`, us-east-1/us-west-2 only).
 
-**Candidates:** Micro (cheapest) · Lite · Nova 2 Lite (current) · Pro (strongest, priciest). Prices:
-bedrock pricing page for ap-southeast-1 — read it, don't guess.
+**Candidates and prices** (AWS Price List API, on-demand, `ap-southeast-1`, 2026-10-17; $ per million tokens):
+
+| Model | Profile id | Input | Output |
+|---|---|---|---|
+| Nova Micro | `apac.amazon.nova-micro-v1:0` | 0.047 | 0.188 |
+| Nova Lite | `apac.amazon.nova-lite-v1:0` | 0.081 | 0.324 |
+| **Nova 2 Lite (current)** | `global.amazon.nova-2-lite-v1:0` | **0.41** | **3.39** |
+| Nova Pro | `apac.amazon.nova-pro-v1:0` | 1.08 | 4.32 |
+
+Nova 2 Lite costs about 5× Nova Lite on input and 10× on output, so a cheaper model on `classify` / `clarify` could cut
+cost a lot. The `apac.` rows are the in-region price; confirm on first use that AWS bills the same (see *Things learned*).
 
 ## Node map
 
@@ -265,7 +288,9 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261011-024616` | 22/24 | 6/6 | 6/6 | 22/24 | 0/12 | $0.00176 | Booking fact + scope; t20 invented content blocked (in Chinese) |
 | `20261011-030241` | 22/24 | 6/6 | 6/6 | **23/24** | 0/12 | $0.00176 | **Human review live**; only miss t06 (blocked) |
 | `20261017-075031` | 22/24 | 6/6 | 6/6 | 22/24 | 0/11 | $0.00165 | **Staging baseline** (Nova 2 Lite ×4, re-laid-out graph) |
-| `20261017-075438` | 22/24 | 6/6 | 6/6 | 21/24 | 0/11 | $0.00174 | Staging run #2: passes the gate; the ±1 spread |
+| `20261017-075438` | 22/24 | 6/6 | 6/6 | 21/24 | 0/11 | $0.00174 | Staging run #2: passes the gate; the ±1 spread (**old prices**) |
+| `20261017-082124` | 22/24 | 6/6 | 6/6 | 21/24 | 0/10 | $0.00240 | **Per-stage config + corrected prices: new baseline** |
+| `20261017-082529` | 22/24 | 6/6 | 6/6 | 21/24 | 0/9 | $0.00219 | Same config, run #2 |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)
@@ -329,6 +354,15 @@ in intake + errors) → commit **without** an attribution trailer.
 - **Telegram node defaults to Markdown** — `_` breaks it. Use `parse_mode: HTML` and escape `& < >`.
 - **Error Trigger** fires for production runs only; nothing alerts on a failure *inside* the error workflow.
 - **Tests must not page humans** — gate notifications on test traffic.
+- **The `config` prices were wrong, and every cost figure before 2026-10-17 was ~36% too low.** `$0.30 / $2.50` per
+  million tokens is Nova 2 Lite's us-east-1 list price. Through the `global` profile from `ap-southeast-1` AWS bills
+  **$0.41 / $3.39**: confirmed in Cost Explorer (gross, 948.1K input tokens → $0.3887, 82.1K output → $0.2783, 2026-10-10..13).
+  Token counts matched what the workflow logged, so only the price was off. Fixed on staging; the live `config` still has
+  the old numbers until promoted. **Never trust a price from memory: read the Price List API, then check against billing.**
+- **Cost Explorer shows $0.00 on credits** unless you filter `RECORD_TYPE = Usage` (the credit nets the cost out). Use
+  `aws ce get-cost-and-usage … --filter '{"Dimensions":{"Key":"RECORD_TYPE","Values":["Usage"]}}' --group-by Type=DIMENSION,Key=USAGE_TYPE`
+  with the `sandbox-26` profile. Prices: `aws pricing get-products --service-code AmazonBedrock --region us-east-1 --filters
+  Type=TERM_MATCH,Field=usagetype,Value=APS1-NovaLite-input-tokens` (filtering by `regionCode` returns 100 products a page and my `--max-results` + `--starting-token` paging failed; an exact usage-type query is simpler).
 - **Public API:** publishing is `POST /workflows/{id}/activate` with `{"versionId": …}`; create/update bodies take only
   `name`, `nodes`, `connections`, `settings` and the settings must be allow-listed (see `test/staging.py`); strip
   `webhookId` when cloning or two workflows fight over one webhook; `DELETE` on an inactive workflow is permanent (404).

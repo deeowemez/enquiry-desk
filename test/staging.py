@@ -6,8 +6,15 @@ An automated builder that edits the live workflow can only test its change by pu
 builder works on a staging copy, and a person promotes a change to production.
 
     python3 test/staging.py create    # first time: clone the live intake + errors workflows
-    python3 test/staging.py sync      # overwrite staging with the live workflows' current draft
+    python3 test/staging.py sync --yes   # overwrite staging with the live workflows' current draft (discards
+                                         # un-promoted staging work: `export` first)
     python3 test/staging.py status    # show ids, active state and the staging webhook path
+    python3 test/staging.py export    # write the staging intake to workflows/01-intake.staging.json (chat id placeholdered)
+    python3 test/staging.py models    # which model each stage uses on staging
+    python3 test/staging.py set-model classify=apac.amazon.nova-micro-v1:0 [draft=... verify=... clarify=... | all=...]
+    python3 test/staging.py promote        # SHOW what would change in the LIVE intake workflow (read-only)
+    python3 test/staging.py promote --yes  # a PERSON runs this: back up live, apply staging's graph, publish
+    python3 test/staging.py rollback --yes # put the latest pre-promotion backup back and publish it
 
 What differs from production (everything else is a straight copy):
   intake  : webhook path `enquiry-staging`; its error workflow is the staging errors copy;
@@ -19,6 +26,7 @@ Postgres; score.py traffic (test+...@example.com) is separated by `is_test` in t
 Needs N8N_API_KEY in the environment (never written to a file). N8N_API_URL defaults to
 http://127.0.0.1:5678. Standard library only.
 """
+import datetime
 import json
 import os
 import pathlib
@@ -30,6 +38,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 STATE = HERE / "staging.json"
 PROD = {"intake": "9OtHm7FyRtNdUl1p", "errors": "BSmcb09mPBarqPjO"}
 SUFFIX = " (STAGING)"
+BACKUPS = pathlib.Path.home() / ".local" / "state" / "enquiry-desk"   # pre-promotion copies: hold the real chat id, so NOT in git
+STAGES = ("classify", "draft", "verify", "clarify")
 STAGING_PATH = "enquiry-staging"
 # The public API rejects unknown settings keys (e.g. binaryMode, availableInMCP), so allow-list.
 SETTINGS_OK = ("executionOrder", "saveDataSuccessExecution", "saveDataErrorExecution",
@@ -100,7 +110,7 @@ def publish(wid, body_hint=None):
     api("POST", f"/workflows/{wid}/activate", {"versionId": w["versionId"]})
 
 
-def cmd_create():
+def cmd_create(args):
     st = load_state()
     if st:
         sys.exit(f"{STATE.name} already exists ({st}). Use `sync`, or delete it to start over.")
@@ -113,10 +123,13 @@ def cmd_create():
     print(f"created: intake {intake['id']}, errors {errors['id']}\nwebhook path: /webhook/{STAGING_PATH}")
 
 
-def cmd_sync():
+def cmd_sync(args):
     st = load_state()
     if not st:
         sys.exit("No staging.json yet. Run `create` first.")
+    if "--yes" not in args:
+        sys.exit("`sync` OVERWRITES staging with the live workflows, discarding any change that has not been promoted.\n"
+                 "Run `export` first if staging holds work you want to keep, then `sync --yes`.")
     e = api("PUT", f"/workflows/{st['errors']}",
             build_errors(api("GET", f"/workflows/{PROD['errors']}")))
     publish(st["errors"])
@@ -127,7 +140,140 @@ def cmd_sync():
           f"errors {st['errors']} ({len(e['nodes'])} nodes)")
 
 
-def cmd_status():
+def cmd_export(args):
+    """Write the staging intake workflow to workflows/ (the repo rule: API changes must reach git).
+
+    The Telegram chat id is replaced by the {{ALERT_CHAT_ID}} placeholder; the real value stays in .env.
+    This is also how a change gets promoted: a person imports this file into the live workflow, then runs `sync`.
+    """
+    st = load_state()
+    if not st:
+        sys.exit("No staging.json yet. Run `create` first.")
+    w = api("GET", f"/workflows/{st['intake']}")
+    for n in w["nodes"]:
+        if n["type"].endswith(".telegram") and "chatId" in n["parameters"]:
+            n["parameters"]["chatId"] = "{{ALERT_CHAT_ID}}"
+    out = {k: w[k] for k in ("name", "nodes", "pinData", "connections", "settings", "meta") if k in w}
+    path = HERE.parent / "workflows" / "01-intake.staging.json"
+    path.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
+    print(f"wrote {path.relative_to(HERE.parent)} ({len(w['nodes'])} nodes)")
+
+
+def put(wid, body):
+    """Update a workflow with a body the public API accepts (settings allow-listed)."""
+    api("PUT", f"/workflows/{wid}", {"name": body["name"], "nodes": body["nodes"], "connections": body["connections"],
+                                    "settings": {k: v for k, v in (body.get("settings") or {}).items() if k in SETTINGS_OK}})
+
+
+def stage_models(w):
+    cfg = next(n for n in w["nodes"] if n["name"] == "config")["parameters"]["assignments"]["assignments"]
+    return {a["name"]: a["value"] for a in cfg}
+
+
+def cmd_models(args):
+    st = load_state()
+    if not st:
+        sys.exit("No staging.json yet. Run `create` first.")
+    m = stage_models(api("GET", f"/workflows/{st['intake']}"))
+    for s in STAGES:
+        print(f"{s:9} {m.get(s + '_model', '(not set: the per-stage config has not reached staging)')}")
+    print("priced models:", ", ".join(json.loads(m.get("model_prices", "{}"))))
+
+
+def cmd_set_model(args):
+    """Change which model a staging stage uses. Only models in config.model_prices are accepted."""
+    st = load_state()
+    if not st or not args:
+        sys.exit("usage: set-model classify=<model id> [draft=... verify=... clarify=... | all=...]")
+    w = api("GET", f"/workflows/{st['intake']}")
+    cfg = next(n for n in w["nodes"] if n["name"] == "config")["parameters"]["assignments"]["assignments"]
+    prices = json.loads(next(a["value"] for a in cfg if a["name"] == "model_prices"))
+    want = {}
+    for a in args:
+        stage, _, model = a.partition("=")
+        if stage != "all" and stage not in STAGES or not model:
+            sys.exit(f"bad argument {a!r}: stages are {', '.join(STAGES)} or all")
+        if model not in prices:
+            sys.exit(f"{model!r} has no price in config.model_prices (priced: {', '.join(prices)}). Add its price first.")
+        for s in (STAGES if stage == "all" else (stage,)):
+            want[s] = model
+    for a in cfg:
+        if a["name"] in {s + "_model" for s in want}:
+            a["value"] = want[a["name"][:-len("_model")]]
+    put(st["intake"], w)
+    publish(st["intake"])
+    print("staging now uses:", stage_models(api("GET", f"/workflows/{st['intake']}")) and
+          {s: stage_models(api("GET", f"/workflows/{st['intake']}"))[s + "_model"] for s in STAGES})
+
+
+def live_from_staging(stg, live):
+    """Staging's graph, re-pointed at production: live webhook path and ids, live Telegram state, live error workflow."""
+    ln = {n["name"]: n for n in live["nodes"]}
+    names = {n["name"] for n in stg["nodes"]}
+    if names != set(ln):
+        sys.exit(f"The node sets differ (only in staging: {sorted(names - set(ln))}; only in live: {sorted(set(ln) - names)}). "
+                 "Promote by hand.")
+    nodes = json.loads(json.dumps(stg["nodes"]))
+    for n in nodes:
+        l = ln[n["name"]]
+        n["id"] = l["id"]
+        for k in ("webhookId", "disabled"):
+            if k in l:
+                n[k] = l[k]
+            else:
+                n.pop(k, None)
+        if n["type"].endswith(".webhook"):
+            n["parameters"]["path"] = l["parameters"]["path"]
+        if n["type"].endswith(".telegram"):
+            n["parameters"]["chatId"] = l["parameters"].get("chatId")
+    return {"name": live["name"], "nodes": nodes, "connections": stg["connections"], "settings": live.get("settings") or {}}
+
+
+def cmd_promote(args):
+    st = load_state()
+    if not st:
+        sys.exit("No staging.json yet. Run `create` first.")
+    live = api("GET", f"/workflows/{PROD['intake']}")
+    body = live_from_staging(api("GET", f"/workflows/{st['intake']}"), live)
+    old = {n["name"]: n for n in live["nodes"]}
+    changed = [n["name"] for n in body["nodes"] if n != old[n["name"]]]
+    print(f"live: {live['name']} (active={live['active']}, updated {live['updatedAt']})")
+    print(f"{len(changed)} node(s) would change:", ", ".join(changed) or "none")
+    if body["connections"] != live["connections"]:
+        print("connections would change too")
+    if not changed and body["connections"] == live["connections"]:
+        print("Nothing to promote.")
+        return
+    if "--yes" not in args:
+        print("\nRead-only so far. To apply and publish: promote --yes")
+        return
+    BACKUPS.mkdir(parents=True, exist_ok=True)
+    backup = BACKUPS / f"promote-{datetime.datetime.now(datetime.timezone.utc):%Y%m%d-%H%M%S}.json"
+    backup.write_text(json.dumps(live))
+    backup.chmod(0o600)
+    print(f"backup of live before the change: {backup}")
+    put(PROD["intake"], body)
+    publish(PROD["intake"])
+    after = api("GET", f"/workflows/{PROD['intake']}")
+    print(f"promoted and published: {len(after['nodes'])} nodes, active={after['active']}")
+    print("settings unchanged" if after["settings"] == live["settings"] else
+          f"WARNING settings differ\n  before: {live['settings']}\n  after:  {after['settings']}")
+    print("undo with: python3 test/staging.py rollback --yes")
+
+
+def cmd_rollback(args):
+    files = sorted(BACKUPS.glob("promote-*.json")) if BACKUPS.exists() else []
+    if not files:
+        sys.exit("No pre-promotion backup found.")
+    latest = files[-1]
+    if "--yes" not in args:
+        sys.exit(f"Would restore {latest.name} to the LIVE intake workflow and publish it. Add --yes to do it.")
+    put(PROD["intake"], json.loads(latest.read_text()))
+    publish(PROD["intake"])
+    print(f"restored {latest.name} and published")
+
+
+def cmd_status(args):
     st = load_state()
     if not st:
         print("No staging copy yet. Run `create`.")
@@ -139,7 +285,8 @@ def cmd_status():
 
 
 if __name__ == "__main__":
-    cmds = {"create": cmd_create, "sync": cmd_sync, "status": cmd_status}
-    if len(sys.argv) != 2 or sys.argv[1] not in cmds:
+    cmds = {"create": cmd_create, "sync": cmd_sync, "status": cmd_status, "export": cmd_export, "models": cmd_models,
+            "set-model": cmd_set_model, "promote": cmd_promote, "rollback": cmd_rollback}
+    if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         sys.exit(__doc__)
-    cmds[sys.argv[1]]()
+    cmds[sys.argv[1]](sys.argv[2:])

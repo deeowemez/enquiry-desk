@@ -218,6 +218,22 @@ claimed otherwise; it was wrong). `score.py --label` and `compare.py` are built.
 `workflows/01-intake.staging.json`. **Check before trusting a small model:** every call relies on a *forced tool call*
 (`toolChoice`), and Micro may not support it or may do it less reliably than Lite.
 
+**Findings: `classify` (2026-10-17; one stage changed, the rest on Nova 2 Lite; baseline 22/24 category, 21/24 actions, $0.0024)**
+
+| `classify` model | Category | Flags | Slots | Actions | Cost / enquiry | Gate |
+|---|---|---|---|---|---|---|
+| Nova 2 Lite (baseline) | 22/24 | 6/6 | 6/6 | 21/24 | $0.0024 | n/a |
+| Nova Micro | 17/24 (both runs) | 6/6 | 5/6 | 13/24 | $0.00066 | **fails** |
+| Nova Lite | 19/24 (both runs) | 6/6 | 5/6 | 21/24 | $0.00134 | **fails** (category) |
+| Nova Pro | 20/24 (both runs) | 6/6 | 5/6 | 19–20/24 | $0.00246 | **fails** |
+
+No cheaper model qualifies for `classify`; safety flags held at 6/6 throughout. Micro falls back to `other` on five cases (t05, t07,
+t09, t10, t11), Lite misreads t14, t19 (complaint → other; the safety flag still caught it) and t21, and **Nova Pro scores below
+Nova 2 Lite while costing more** ($1.08 / $4.32 per million tokens vs $0.41 / $3.39), so it is dropped from the comparison. Results
+were identical across the two runs of each model (temperature 0). **Caveat:** the classifier prompt and category definitions were
+tuned on Nova 2 Lite, so this measures "drop-in replacement", not each model's best. Cost for the non-Nova-2-Lite rows uses the AWS
+list price and is **not yet checked against billing** (Cost Explorer lags ~1 day).
+
 **Titan:** AWS confirms first-party models (Nova, Titan) are standard usage covered by the credit. But on this
 account Titan is **embeddings only** (checked 2026-10-14 in ap-southeast-1, us-east-1, us-west-2: no Titan *text*
 model is offered; the text models are retired). So it can't be one of the four calls. It would fit a future
@@ -291,13 +307,17 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261017-075438` | 22/24 | 6/6 | 6/6 | 21/24 | 0/11 | $0.00174 | Staging run #2: passes the gate; the ±1 spread (**old prices**) |
 | `20261017-082124` | 22/24 | 6/6 | 6/6 | 21/24 | 0/10 | $0.00240 | **Per-stage config + corrected prices: new baseline** |
 | `20261017-082529` | 22/24 | 6/6 | 6/6 | 21/24 | 0/9 | $0.00219 | Same config, run #2 |
+| `20261017-083240` / `-083613` | 17/24 | 6/6 | 5/6 | 13/24 | 0 | $0.00066 | `classify` = Nova Micro: fails the gate |
+| `20261017-083955` / `-084347` | 19/24 | 6/6 | 5/6 | 21/24 | 0 | $0.00134 | `classify` = Nova Lite: fails (category) |
+| `20261017-084744` / `-085139` | 20/24 | 6/6 | 5/6 | 19–20/24 | 0 | $0.00246 | `classify` = Nova Pro: fails, and costs more than the baseline |
+| `20261017-085650` | 22/24 | 6/6 | 6/6 | 22/24 | 0/12 | $0.00238 | `clarify` = Nova Micro, **one run**: passes. Interrupted sweep: staging was restored 5 s before the end, but `clarify` only touches t02 and t21, which run early, so the result stands. Not a recommendation: `clarify` is not where accuracy is decided |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)
 
 ## Open issues
 
-- ~~A7 credit check~~ resolved: Claude on Bedrock is Marketplace-billed, **not** covered by the credit. Nova only.
+- ~~A7 credit check~~ resolved and **confirmed in writing by AWS Support**: only Amazon's first-party models (Nova, Titan) use the credit. Nova only.
 - **Why was the account put on hold (10-11)?** Lifted, cause not recorded. Read the AWS notice before relying on
   the account for the Loom or a pilot.
 - **2 stuck rows** (`status = received`, executions 708 and 710 on 10-11): runs that died during the hold
@@ -384,8 +404,11 @@ in intake + errors) → commit **without** an attribution trailer.
 - **Test a model step in isolation:** throwaway webhook workflow + crafted good/bad inputs; re-run it.
 
 **AWS / infra**
-- Credit covers **"Sold by: AWS"** only. **Confirmed:** Nova yes; Anthropic/Claude on Bedrock is billed separately
-  through AWS Marketplace and does not consume the credit.
+- **What the credit covers (AWS Support, 2026-10-12):** Amazon's first-party models, Nova and Titan, only. **Anthropic, Meta,
+  Mistral AI, Cohere, AI21 Labs and Stability AI are billed through AWS Marketplace; the credit does not apply** (charges post under
+  the provider, not "Amazon Bedrock"). The account is on the Free plan. Qwen, DeepSeek, Gemma and the other providers were not
+  named: treat as not covered and don't probe them (a test call could bill outside the credit). Llama and Mistral showing "no
+  Marketplace agreement" in the Bedrock API does **not** mean AWS-billed: that guess was wrong.
 - **Callable Nova models** (ap-southeast-1, checked 2026-10-14): `apac.amazon.nova-micro-v1:0`,
   `apac.amazon.nova-lite-v1:0`, `apac.amazon.nova-pro-v1:0`, `global.amazon.nova-2-lite-v1:0`. Use the profile ID,
   not the bare model ID.

@@ -1,7 +1,8 @@
 # Enquiry Desk — agent context
 
-Stable context for this project. **Where things stand right now lives in [STATE.md](STATE.md)** —
-read it at the start of every session.
+Stable context for this project. **Where things stand right now (status, next steps) lives in the project notes**,
+which the parent `CLAUDE.md` loads at the start of every session. **[STATE.md](STATE.md) is the technical record**
+(results history, decisions and their reasons, node map, lessons learned, how to run things): read it for the detail.
 
 ## What this is
 
@@ -24,8 +25,10 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `kb/facts.yaml` | Source of truth for facts. The `facts` Code node is a hand-copy — **change both** |
 | `schema/` | Envelope shape, classification JSON schema, Postgres tables |
 | `test/enquiries.jsonl` | 24 labelled cases. `t05`, `t11`, `t18`, `t24` are the ones that matter most |
-| `test/score.py` | Scorer: posts each case to the **production** webhook, reads back the row, reports accuracy. `--help` for usage |
+| `test/score.py` | Scorer: posts each case to a **production-mode** webhook (live or staging), reads back the row, reports accuracy. `--label` names the run. `--help` for usage |
 | `test/results/` | One JSONL per scoring run — compare before/after a change |
+| `test/compare.py`, `test/baseline.json` | Table of runs; `--check RUN` gates a run against the baseline (safety, invented claims, failures, accuracy, cost) |
+| `test/staging.py`, `test/staging.json` | Builds/refreshes the **staging copy** of intake + errors (`/webhook/enquiry-staging`, no Telegram). Test changes there; only a person promotes to the live workflow |
 | `test/replay.py` | Re-posts failed enquiries from the `dead_letter` view. `--dry-run` first |
 | `workflows/01-intake.mine.json` | **The live intake workflow** (export after every change) |
 | `workflows/01-errors.json`, `01-review.json` | Failure-path and human-review workflows. Chat ID is a `{{ALERT_CHAT_ID}}` placeholder (real value in `.env`) |
@@ -52,9 +55,14 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 5. **Changes made through the n8n API aren't in git.** Export the workflow to `workflows/` after any
    change, mine or yours.
 6. Cite the build guide's trap numbers (①–⑥) when one applies, rather than re-explaining.
+7. **No attribution trailers.** Never add `Co-Authored-By: Claude …` or any other AI attribution to a commit
+   or a suggested commit message. This overrides the harness's default attribution reminder: the repo is a
+   public portfolio and the commits should read as mine.
 
 ## Session ritual
 
-- **Start:** read `STATE.md`, summarise where I am in 3 lines, propose the next step.
-- **End:** update `STATE.md` (status, what changed, next 3 steps, open questions), export changed
-  workflows to `workflows/`, and suggest a commit message.
+- **Start:** read the project notes (already loaded) and `STATE.md`'s *Status* section, summarise where I am in
+  3 lines, propose the next step.
+- **End:** update the project notes (current state, next steps, a dated log line). Update `STATE.md` only for
+  technical changes: a new results row, a decision and its reason, the node map, a lesson learned. Export changed
+  workflows to `workflows/`, and suggest a commit message (rule 7: no attribution trailer).

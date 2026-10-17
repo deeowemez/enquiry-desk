@@ -1,8 +1,7 @@
 # Enquiry Desk — state
 
-**Last updated:** 2026-10-16 · **Sessions 1–4 pushed** (`207311d`) · canvas re-layout, `WORKFLOW.md` and dashboard
-views committed 2026-10-16, not yet pushed (see *Since the last commit*)
-**Next:** publish + re-score → dashboard → README → Loom (see *Next*)
+**Last updated:** 2026-10-17. This file is the **technical record**: results, decisions and their reasons, node map,
+lessons learned, how to run things. Current status and next steps live in the project notes (loaded at session start).
 
 ## Status
 
@@ -34,20 +33,26 @@ it (label says `escalate`; both reach a human). **Nothing is emailed to customer
   `replay.py` re-runs it with one command. Proven by a chaos test.
 - **Measured:** `score.py` re-runs the 24 cases after every change; every run is in `test/results/`.
 
-## Since the last commit (2026-10-11 → 14)
+## Staging, run comparison and the gate (2026-10-17)
 
-- **Canvas re-layout (intake, 47 nodes).** Lines that loop back to the left all share one route in n8n, so 8
-  of them overlapped. Now `route` fans out to a column of `action = …` nodes (separate curves), and the three
-  branches join at a new **`to record`** No Operation node, so there's one line into ④. Draft only: **Publish** it.
-  Logic unchanged (`prepare row` reads only `$input`).
-- **`WORKFLOW.md`**: node-by-node walkthrough of stages ①–④ + errors/review workflows, with n8n gotchas.
-  Written for someone new to n8n.
-- **Dashboard views** in `schema/schema.sql` (applied to the Pi's Postgres): `stats_enquiry` (base: one row per
-  enquiry + cost), `stats_daily`, `stats_cost`, `stats_pending_reviews`, `stats_block_reasons`, `stats_health`.
-  No view exposes email, subject or body. `day` is Hong Kong time; `is_test` = score.py traffic.
-- **Bedrock account hold (2026-10-11).** AWS put the account on hold; every model call returned
-  `400 Operation not allowed` (any model, any region; listing models still worked). **Lifted by 10-12**: a
-  production run processed 10-12 12:47 UTC, and a test call worked 10-14.
+Goal: let creation and testing run unattended. Feasibility was checked first (headless `claude -p` on a Pi cron
+works; cloud routines can't reach the tailnet-only n8n). What exists:
+
+- **Staging copy of intake + errors** (`test/staging.py create | sync | status`; ids in `test/staging.json`):
+  webhook `/webhook/enquiry-staging`, errors copy has no Telegram, the intake `review alert` node is disabled.
+  Why: `score.py` tests the *published* version through a production-mode webhook, so an unattended builder that
+  edits the live workflow could only test by publishing it. It works on staging; **a person promotes to live.**
+  `sync` re-copies live → staging after a promotion. Staging shares Postgres; test traffic is `test+…` (`is_test`).
+- **`score.py --label`** names a run (model set / prompt) in the results file.
+- **`test/compare.py`** prints a table of runs, and `--check RUN` gates a run against `test/baseline.json`:
+  safety flags all pass · 0 invented claims · 0 failed · category and actions within **±1** of baseline · cost
+  within **+25%**. Gate proven both ways (passes a normal run, fails a doctored one). Tolerance and margin are
+  flags; I chose the defaults, change them if they feel wrong.
+- **Baseline** = `20261017-075031` (staging, Nova 2 Lite on all four calls): category 22/24, flags 6/6, slots 6/6,
+  actions 22/24, 0 invented, $0.001653. Run #2 (`20261017-075438`) scored actions 21/24 — the normal spread, and
+  it passes the gate. Staging matches production's last run (`20261011-030241`: 22/24 · 6/6 · 23/24).
+- **Move fallout fixed:** the repo moved to `~/deeowemez/repos/enquiry-desk`; memory folder and the four disabled
+  connectors copied to the new project key, and the no-trailer rule is now **rule 7 in `CLAUDE.md`**.
 
 ## How it flows
 
@@ -108,21 +113,9 @@ flowchart TB
 Orange = model calls (the only paid, non-deterministic steps) · blue = code that decides or checks · purple =
 outcomes · green = Postgres · red = errors workflow. Simplified: the exact node list is in *Node map*.
 
-## Next
+## Loom outline
 
-| # | Step | Why |
-|---|---|---|
-| 1 | ~~**Commit** the re-layout, `WORKFLOW.md` and the views~~ **Done 2026-10-16** | Three finished pieces sitting uncommitted |
-| 2 | **Publish** the intake draft, then **re-score** all 24 | Production still runs the old graph; confirms nothing broke and Bedrock is fully back |
-| 3 | ~~A7 credit check~~ **Resolved 2026-10-14:** Anthropic models are billed separately via AWS Marketplace and don't use the credit → **Nova only**. Still to do: read the hold notice (what triggered it?) | A second hold mid-Loom would hurt |
-| 3b | **Model comparison** (see *Model strategy*): per-stage model settings in `config`, a `--label` on `score.py`, then run Micro / Lite / Nova 2 Lite / Pro | Picks the cheapest set that holds the safety numbers; gives the README a real "why this model" table |
-| 4 | **Dashboard** on the `stats_*` views. **Decide:** Grafana (hours, alerts, light on the Pi) vs a React ops console (metrics + review queue in one app, via n8n webhooks; days). Either way, a read-only DB user granted the views only | Makes the reliability visible; goes in the Loom |
-| 5 | **README.md**: problem, diagram, the numbers, how it's tested, honest limits, Loom link (`WORKFLOW.md` is the deep dive) | The repo's front page is what reviewers actually read |
-| 6 | **Update the two overview stickies** (red one says "session 3 done"; top one says ~$0.001, measured is ~$0.0018), then **record the Loom** | The single most persuasive artefact |
-| 7 | **Clean the repo for public view:** `workflows/01-intake.json` (session-1 answer key) vs `01-intake.mine.json`; delete `test/test.json`; resolve the 2 stuck rows | Avoid "which file is the real one?" |
-| 8 | Optional: one **real pilot** → one-page case study (confirm Bedrock data terms before any real data) | Turns a portfolio piece into evidence for clients |
-
-### Loom outline (record in segments; ~4–5 min)
+Record in segments, about 4–5 minutes.
 
 | # | Show | Say |
 |---|---|---|
@@ -187,6 +180,10 @@ outcomes · green = Postgres · red = errors workflow. Simplified: the exact nod
     means re-measuring. `clarify` (plain text, no tool) is the only clean swap and isn't worth making one of four
     inconsistent. Optional experiment: build `clarify` as a chain in a scratch copy and compare. Answer for "why not
     the AI nodes?": forced tool calls for guaranteed structure, token usage for per-stage cost.
+16. **An automated builder works on a staging copy; a person promotes to live** (2026-10-17). `score.py` tests the
+    published version, so testing a change on the live workflow means publishing it. Staging (`test/staging.py`)
+    removes that: same graph, own webhook path, no Telegram. A change qualifies only if `compare.py --check` passes
+    (safety 6/6, 0 invented, 0 failed, accuracy ±1, cost +25%) on two runs. Promotion stays manual.
 
 ## Model strategy (decided 2026-10-14)
 
@@ -239,7 +236,7 @@ Canvas: four stacked stage frames (3620 px wide), fits one screen at **Shift+1**
 **Repo files:** `WORKFLOW.md` (node-by-node guide) · `workflows/01-intake.mine.json`, `01-errors.json`,
 `01-review.json` (+ `IMPORT.md`) · `kb/facts.yaml` (source of truth — the `facts` node is a hand copy, **change
 both**) · `schema/schema.sql` (tables, `dead_letter`, `stats_*` views) · `test/score.py`, `test/replay.py`,
-`test/enquiries.jsonl`, `test/results/`.
+`test/staging.py` (+ `staging.json`), `test/compare.py` (+ `baseline.json`), `test/enquiries.jsonl`, `test/results/`.
 
 **Dashboard views** (all read-only, no email/subject/body):
 
@@ -267,8 +264,11 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261011-021009` | 22/24 | 6/6 | 6/6 | 22/24* | 0/12 | $0.00172 | Verifier — **caught a real error** (GCSE Maths on Saturdays). *t22 relabelled |
 | `20261011-024616` | 22/24 | 6/6 | 6/6 | 22/24 | 0/12 | $0.00176 | Booking fact + scope; t20 invented content blocked (in Chinese) |
 | `20261011-030241` | 22/24 | 6/6 | 6/6 | **23/24** | 0/12 | $0.00176 | **Human review live**; only miss t06 (blocked) |
+| `20261017-075031` | 22/24 | 6/6 | 6/6 | 22/24 | 0/11 | $0.00165 | **Staging baseline** (Nova 2 Lite ×4, re-laid-out graph) |
+| `20261017-075438` | 22/24 | 6/6 | 6/6 | 21/24 | 0/11 | $0.00174 | Staging run #2: passes the gate; the ±1 spread |
 
-All runs: `test/results/<run>.jsonl`. Run-to-run variance at temperature 0 is ±1–2/24 — compare runs, not cases.
+All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
+is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)
 
 ## Open issues
 
@@ -279,6 +279,8 @@ All runs: `test/results/<run>.jsonl`. Run-to-run variance at temperature 0 is ±
   without being marked failed (manual runs; the Error Trigger is production-only), so they're **not** in
   `dead_letter` and `replay.py` won't see them. Mark them `failed` and replay, or delete them. `stats_health.stuck`
   will catch the next one.
+- **Test traffic piles up reviews:** every full run adds about 11 `pending` reviews (37 pending on 10-17, all
+  `test+…`). Filter `is_test` in dashboard panels; consider auto-closing test reviews before the nightly loop runs.
 - **Legacy rows:** 161 enquiries with `status = 'new'` (2026-10-06 → 10, before write-first intake). Kept;
   views show them, but they never count as processed.
 - **Residual risk:** the verifier is a model (~1 in 10 variance on the crafted set); only availability has a code
@@ -297,6 +299,14 @@ python3 test/score.py --webhook "$WEBHOOK_PROD_URL" \
   --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"        # all 24, ~6 min, ~4¢
 python3 test/replay.py --webhook "$WEBHOOK_PROD_URL" \
   --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n" --dry-run   # list the dead letters
+
+# Staging (what an automated builder uses; needs N8N_API_KEY in the environment)
+python3 test/staging.py status                     # ids, active state; `sync` re-copies live → staging
+STAGING="${WEBHOOK_PROD_URL%/enquiry}/enquiry-staging"
+python3 test/score.py --webhook "$STAGING" --label "my change" \
+  --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"
+python3 test/compare.py                            # table of runs
+python3 test/compare.py --check <run>              # gate against test/baseline.json; exit 1 = fail
 ```
 Review page: `https://raspberrypi.tailf7a7bf.ts.net/webhook/review?id=…&t=…` (tailnet only).
 **Export ritual:** close every n8n tab → open fresh → unpin → export → agent scans (re-placeholders the chat ID
@@ -319,6 +329,9 @@ in intake + errors) → commit **without** an attribution trailer.
 - **Telegram node defaults to Markdown** — `_` breaks it. Use `parse_mode: HTML` and escape `& < >`.
 - **Error Trigger** fires for production runs only; nothing alerts on a failure *inside* the error workflow.
 - **Tests must not page humans** — gate notifications on test traffic.
+- **Public API:** publishing is `POST /workflows/{id}/activate` with `{"versionId": …}`; create/update bodies take only
+  `name`, `nodes`, `connections`, `settings` and the settings must be allow-listed (see `test/staging.py`); strip
+  `webhookId` when cloning or two workflows fight over one webhook; `DELETE` on an inactive workflow is permanent (404).
 - **Public API PUT rejects `settings.binaryMode`**; several incoming branches run a node once per branch (no Merge).
 - **Line drawing is fixed by position** (checked in the 2.26 editor code): target to the right → curve
   (straight only at equal height); target to the left → stepped line, dropping 130 px and rising at target − 40 px,
@@ -362,9 +375,3 @@ in intake + errors) → commit **without** an attribution trailer.
   source of facts), to the classifier as well as the drafter.
 - **Facts in a Google Sheet** when a client must edit them; grow the test set with real (anonymised) enquiries.
 
-## Positioning (for applications and pitches)
-
-**Strong as proof of capability, weak as a product.** Enquiry triage is crowded; what stands out is
-*reliability you can show numbers for*. Lead with the outcome ("Asian-timezone enquiries wait 7 hours; this
-answers the safe majority in minutes and routes the rest to a person by morning"), then show the safety
-mechanisms and the measured results. Be explicit that the client is fictional and the data synthetic.

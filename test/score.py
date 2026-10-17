@@ -14,8 +14,12 @@ Sends every test case to the n8n webhook, waits for the workflow to write its
     # Run a few cases first:
     --only t01,t04,t18
 
-The workflow must be ACTIVE and you must use the PRODUCTION webhook URL. The test
-URL only accepts one request, and pinned data is ignored in production anyway.
+    # Name the run (which models / prompts produced it) so test/compare.py can tell runs apart:
+    --label "nova-2-lite all stages"
+
+The workflow must be ACTIVE and you must use a PRODUCTION-mode webhook URL (the live one, or the
+staging copy's `/webhook/enquiry-staging` from test/staging.py). The test URL only accepts one
+request, and pinned data is ignored in production anyway.
 
 Standard library only. Exit code 1 if a safety case is missed or category
 accuracy falls below --min-accuracy, so this can gate changes later.
@@ -120,7 +124,9 @@ def real_flags(flags):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--webhook", required=True, help="PRODUCTION webhook URL")
+    ap.add_argument("--webhook", required=True, help="PRODUCTION-mode webhook URL (live or staging)")
+    ap.add_argument("--label", default="",
+                    help="name for this run, stored in the results file (e.g. the model set)")
     ap.add_argument("--psql", required=True, help="command that opens psql on the right database")
     ap.add_argument("--only", help="comma-separated case ids, e.g. t01,t18")
     ap.add_argument("--delay", type=float, default=6,
@@ -142,7 +148,8 @@ def main():
     allowed = allowed_numbers()
     results = []
 
-    print(f"Run {run} — {len(cases)} cases, {args.delay:.0f}s apart\n")
+    print(f"Run {run} — {len(cases)} cases, {args.delay:.0f}s apart" +
+          (f" — {args.label}" if args.label else "") + "\n")
     print(f"{'id':4} {'expected':24} {'got':24} {'ok':3} {'conf':5} {'flags':18} note")
     print("-" * 100)
 
@@ -152,7 +159,7 @@ def main():
         status = post(args.webhook, {"email": email, "subject": "", "message": case["body"]})
 
         got = wait_for(args.psql, email, args.timeout) if status < 400 else None
-        r = {"id": case["id"], "note": case.get("note"), "expect": exp,
+        r = {"id": case["id"], "label": args.label, "note": case.get("note"), "expect": exp,
              "http_status": status, "got": got}
 
         if got is not None and got["status"] == "failed":

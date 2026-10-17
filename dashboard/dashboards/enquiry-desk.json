@@ -1,0 +1,593 @@
+{
+ "uid": "enquiry-desk",
+ "title": "Enquiry Desk",
+ "tags": [
+  "enquiry-desk"
+ ],
+ "timezone": "Asia/Hong_Kong",
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "1m",
+ "time": {
+  "from": "now-30d",
+  "to": "now"
+ },
+ "templating": {
+  "list": [
+   {
+    "name": "test",
+    "label": "Traffic",
+    "type": "custom",
+    "multi": true,
+    "includeAll": false,
+    "query": "real : false, scoring runs : true",
+    "current": {
+     "text": [
+      "real",
+      "scoring runs"
+     ],
+     "value": [
+      "false",
+      "true"
+     ]
+    },
+    "options": []
+   }
+  ]
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "stat",
+   "title": "Dead letter",
+   "description": "Failed enquiries not yet replayed. Should be 0.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select dead_letter from stats_health"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Stuck",
+   "description": "Still 'received' 10+ minutes on: the run died without the errors workflow marking it failed.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select stuck from stats_health"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Failures, 24h",
+   "description": "Pipeline failures in the last 24 hours (blocked replies are not failures).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select failures_24h from stats_health"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "Awaiting review",
+   "description": "Escalated or blocked, waiting for a person (follows the Traffic filter).",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select count(*) from stats_pending_reviews where is_test in (${test:csv})"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "Avg cost / enquiry",
+   "description": "Mean model spend per processed enquiry in the selected range.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select coalesce(round(avg(cost_usd),5),0) as v from stats_enquiry where status='processed' and is_test in (${test:csv}) and $__timeFilter(received_at)"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 6,
+   "type": "stat",
+   "title": "Last processed",
+   "description": "When the pipeline last finished an enquiry.",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 0,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select last_processed_at as t from stats_health"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "dateTimeFromNow",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none"
+   }
+  },
+  {
+   "id": 7,
+   "type": "barchart",
+   "title": "Enquiries per day, by outcome",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "description": "Hong Kong calendar day. Action is set when a run finishes.",
+   "gridPos": {
+    "x": 0,
+    "y": 4,
+    "w": 14,
+    "h": 9
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select day::timestamp as time,\n sum(enquiries) filter (where action='auto_send') as \"auto-send\",\n sum(enquiries) filter (where action='clarify') as \"clarify\",\n sum(enquiries) filter (where action='escalate') as \"escalate\",\n sum(enquiries) filter (where action='blocked') as \"blocked\",\n sum(enquiries) filter (where status='failed') as \"failed\"\nfrom stats_daily where is_test in (${test:csv}) and $__timeFilter(day::timestamp) group by day order by day"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "stacking": {
+       "mode": "normal"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "xField": "time",
+    "stacking": "normal",
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "xTickLabelRotation": -45
+   }
+  },
+  {
+   "id": 8,
+   "type": "barchart",
+   "title": "Why replies were blocked",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "description": "One row per problem, bucketed by wording. A reply can have several problems.",
+   "gridPos": {
+    "x": 14,
+    "y": 4,
+    "w": 10,
+    "h": 9
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select kind, problems from stats_block_reasons"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "options": {
+    "orientation": "horizontal",
+    "xField": "kind",
+    "legend": {
+     "showLegend": false
+    }
+   }
+  },
+  {
+   "id": 9,
+   "type": "timeseries",
+   "title": "Spend per day",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "description": "Total model cost per Hong Kong day (bars) from run_log.",
+   "gridPos": {
+    "x": 0,
+    "y": 13,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "time_series",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select day::timestamp as time, sum(total_cost_usd) as \"cost\" from stats_cost where is_test in (${test:csv}) and $__timeFilter(day::timestamp) group by day order by day"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "currencyUSD",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 70
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "showLegend": false
+    }
+   }
+  },
+  {
+   "id": 10,
+   "type": "table",
+   "title": "Waiting for a person",
+   "datasource": {
+    "type": "grafana-postgresql-datasource",
+    "uid": "enquiry-desk-pg"
+   },
+   "description": "Oldest first. IDs only; open the review link from Telegram.",
+   "gridPos": {
+    "x": 12,
+    "y": 13,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-postgresql-datasource",
+      "uid": "enquiry-desk-pg"
+     },
+     "format": "table",
+     "rawQuery": true,
+     "editorMode": "code",
+     "rawSql": "select id, category, action, received_at, extract(epoch from waiting)::int as waiting from stats_pending_reviews where is_test in (${test:csv})"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "waiting"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "s"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "sortBy": [
+     {
+      "displayName": "waiting",
+      "desc": true
+     }
+    ]
+   }
+  }
+ ]
+}

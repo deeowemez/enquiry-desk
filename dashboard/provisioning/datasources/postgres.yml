@@ -1,0 +1,15 @@
+apiVersion: 1
+datasources:
+  - name: Enquiry Desk
+    uid: enquiry-desk-pg
+    type: postgres
+    url: postgres:5432
+    user: grafana_ro
+    isDefault: true
+    jsonData:
+      database: n8n
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: $GRAFANA_RO_PASSWORD

@@ -35,6 +35,7 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `workflows/01-intake.staging.json` | Export of the **staging** intake (`test/staging.py export`). Matches live unless a change is waiting to be promoted |
 | `workflows/01-review.staging.json` | Export of the **staging** review workflow (the Gmail-draft step went live 2026-10-17) |
 | `workflows/01-errors.json`, `01-review.json` | Failure-path and human-review workflows. Chat ID is a `{{ALERT_CHAT_ID}}` placeholder (real value in `.env`) |
+| `dashboard/` | Grafana (compose, provisioned datasource + dashboard JSON) over the `stats_*` views, tailnet port 8443. `schema/dashboard_role.sql` makes its read-only DB login |
 | `workflows/IMPORT.md` | How to import the three workflows, with credentials, `config` and a first run |
 
 ## Environment

@@ -123,6 +123,7 @@ alerts, and a Gmail OAuth2 credential for drafts.
 | `kb/facts.yaml` | The fact table (source of truth; the `facts` node in n8n is a hand copy, so change both) |
 | `schema/` | The enquiry envelope, the classification JSON schema, and the Postgres tables and dashboard views |
 | `workflows/` | n8n exports: intake (live and staging), errors, review (live and staging) |
+| `dashboard/` | Grafana dashboard (provisioned from files) over the `stats_*` views, via a read-only DB login |
 | `WORKFLOW.md` | Node-by-node walkthrough |
 | `STATE.md` | Technical record: results, decisions, lessons |
 

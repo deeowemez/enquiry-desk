@@ -37,7 +37,7 @@ enquiry.
 **2. Expressions are code inside `{{ }}`.** Any node field can be switched from *Fixed* to *Expression*.
 In exported JSON these show up as strings starting with `=`, for example `={{ $json.id }}`.
 - `$json.x`: field `x` on the item arriving at this node.
-- `$('config').first().json.llm_url`: field `llm_url` from the output of the node named `config`.
+- `$('config').first().json.bedrock_base`: field `bedrock_base` from the output of the node named `config`.
   This is how a node reaches back to an earlier node's data.
 
 **3. Some nodes *replace* the item.** An HTTP Request node outputs the server's response. A Postgres node
@@ -111,7 +111,8 @@ flowchart TD
   TR --> PR
 ```
 
-`/name/` marks a model call: three Amazon Nova 2 Lite calls on Bedrock, plus `clarify`. `(name)` marks a
+`/name/` marks a model call: four Amazon Nova calls on Bedrock (`classify`, `draft`, `verify`, `clarify`), each with its own
+model set in `config`. `(name)` marks a
 database write.
 
 **On the canvas,** each stage is a blue sticky note with its nodes laid out left to right in rows, and the
@@ -213,9 +214,12 @@ so a 202 is a promise that the enquiry won't be lost. The workflow carries on af
 has already gone.
 
 #### `config` (Set)
-The model settings in one place: the Bedrock URL, model ID (`global.amazon.nova-2-lite-v1:0`), price per
-million input/output tokens ($0.30 / $2.50), and the review page's base URL. To change model or provider,
-edit this node only. Every model call reads it via `$('config').first().json`.
+The model settings in one place: the Bedrock base URL, **one model per stage** (`classify_model`, `draft_model`,
+`verify_model`, `clarify_model`, each a Bedrock inference-profile ID such as `global.amazon.nova-2-lite-v1:0`), a
+**price table** (`model_prices`: dollars per million input and output tokens, keyed by model ID) and the review page's
+base URL. To try a different model on one stage, edit that stage's `*_model` and nothing else: each HTTP node builds its
+URL from its own stage's model, and each read node prices its call from the table (it throws if the model has no entry,
+so a missing price fails loudly instead of logging $0). Every call reads it via `$('config').first().json`.
 
 > **⚠ Gotcha:** *Include Other Input Fields* is on. Without it, a Set node outputs **only** the fields it
 > sets and the envelope disappears. The same applies to every `action = …` node later.
@@ -262,7 +266,7 @@ The form:
 The same schema is kept as a document in `schema/classification.schema.json`.
 
 #### `classify` (HTTP Request)
-POSTs that body to the Bedrock URL from `config`. Auth is a *Header Auth* credential holding the Bedrock
+POSTs that body to the Bedrock URL built from `config` (`bedrock_base` + this stage's model). Auth is a *Header Auth* credential holding the Bedrock
 API key. Under **Settings**, *Retry On Fail* is on: 4 tries, 5 seconds apart, with a 30-second timeout.
 
 > **⚠ Gotcha:** *Retry On Fail* retries **every** error, including ones that can't succeed. An account
@@ -274,7 +278,8 @@ API key. Under **Settings**, *Retry On Fail* is on: 4 tries, 5 seconds apart, wi
   tool, it tries to parse that as JSON.
 - If even that fails, it records `category: other` with a summary starting `PARSE FAILED`, which says what
   came back. `other` with no details is "vague", so the enquiry gets a clarify reply rather than crashing.
-- Works out the cost: `input tokens / 1M × $0.30 + output tokens / 1M × $2.50`.
+- Works out the cost: `input tokens / 1M × price in + output tokens / 1M × price out`, from this stage's entry in
+  `config.model_prices` (Nova 2 Lite: $0.41 in, $3.39 out per million tokens).
 - Puts the envelope back from `$('envelope')`, because the HTTP node replaced the item.
 
 #### `derive missing slots` (Code)
@@ -439,8 +444,8 @@ The row already exists from `record received`. This fills in the classification 
 
 #### `insert run_log` (Postgres)
 One row per stage that ran: `classify` (always), `draft` or `clarify` (if a reply was written), `verify`
-(if it ran), and `validate` (`ok`, or `failed` with the reason). Each row has its model and cost. This is
-where the cost-per-enquiry figure comes from, about $0.0018 measured over the 24 test cases.
+(if it ran), and `validate` (`ok`, or `failed` with the reason). Each row has **that stage's own model** and its
+cost. This is where the cost-per-enquiry figure comes from, about $0.0023 measured over the 24 test cases.
 
 > **⚠ Gotcha:** this node uses `$('prepare row').first().json.id` instead of `$json.id`. The previous
 > node was Postgres, so `$json` is now `update enquiry`'s result, not the prepared row (item replacement

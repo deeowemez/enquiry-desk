@@ -16,9 +16,9 @@
         0,
         0
       ],
-      "webhookId": "b854dd39-12ea-41d3-be84-6a0cfd74b0c2",
       "notesInFlow": true,
-      "notes": "POST /enquiry. Answers via Respond nodes: 400 bad email, 202 received (+ id) once saved, 200 duplicate"
+      "notes": "POST /enquiry. Answers via Respond nodes: 400 bad email, 202 received (+ id) once saved, 200 duplicate",
+      "webhookId": "b854dd39-12ea-41d3-be84-6a0cfd74b0c2"
     },
     {
       "parameters": {
@@ -68,7 +68,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('config').first().json.llm_url }}",
+        "url": "={{ $('config').first().json.bedrock_base + '/model/' + $('config').first().json.classify_model + '/converse' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -96,11 +96,11 @@
           "name": "Bedrock - API key"
         }
       },
-      "notes": "Amazon Nova 2 Lite on Bedrock (Converse). URL + model from `config`. Synthetic data only"
+      "notes": "Bedrock Converse. Model = `config` classify_model. Synthetic data only"
     },
     {
       "parameters": {
-        "jsCode": "// Bedrock Converse response: output.message.content[] is a list of blocks. With the forced\n// tool, the classification arrives already parsed in a toolUse block's `input`.\nconst cfg = $('config').first().json;\nconst IN = cfg.llm_price_in_per_mtok, OUT = cfg.llm_price_out_per_mtok;   // $ per MTok\n\nconst blocks = r => r?.output?.message?.content ?? [];\n\nfunction extractClassification(r) {\n  const tool = blocks(r).find(b => b.toolUse)?.toolUse;\n  if (tool && typeof tool.input === 'object') return tool.input;\n  // Fallback: the model answered in text instead of calling the tool\n  const text = blocks(r).filter(b => typeof b.text === 'string').map(b => b.text).join('');\n  return JSON.parse(text.replace(/^```(?:json)?\\s*|\\s*```$/g, ''));\n}\n// No thinking tokens on Nova with reasoning off: input + output is the whole bill.\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  let c;\n  try { c = extractClassification(r); }\n  catch (e) {\n    // Surfaces what came back so you can fix the extractor in one go.\n    c = { category: 'other', confidence: 0, language: 'en', details: {}, safety_flags: [],\n          summary: 'PARSE FAILED - stopReason: ' + r.stopReason + '; keys: ' + Object.keys(r).join(', ') };\n  }\n  const t = tokens(r);\n  const env = $('envelope').all()[idx].json;    // HTTP response replaced our data\n\n  return { json: { ...env,\n    classification: c,\n    classify_model: cfg.llm_model,\n    classify_tokens: t,\n    classify_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});"
+        "jsCode": "// Bedrock Converse response: output.message.content[] is a list of blocks. With the forced\n// tool, the classification arrives already parsed in a toolUse block's `input`.\nconst cfg = $('config').first().json;\nconst MODEL = cfg.classify_model;\nconst PRICE = JSON.parse(cfg.model_prices)[MODEL];\nif (!PRICE) throw new Error('No price for model ' + MODEL + ' in config.model_prices');\nconst IN = PRICE.in, OUT = PRICE.out;   // $ per MTok\n\nconst blocks = r => r?.output?.message?.content ?? [];\n\nfunction extractClassification(r) {\n  const tool = blocks(r).find(b => b.toolUse)?.toolUse;\n  if (tool && typeof tool.input === 'object') return tool.input;\n  // Fallback: the model answered in text instead of calling the tool\n  const text = blocks(r).filter(b => typeof b.text === 'string').map(b => b.text).join('');\n  return JSON.parse(text.replace(/^```(?:json)?\\s*|\\s*```$/g, ''));\n}\n// No thinking tokens on Nova with reasoning off: input + output is the whole bill.\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  let c;\n  try { c = extractClassification(r); }\n  catch (e) {\n    // Surfaces what came back so you can fix the extractor in one go.\n    c = { category: 'other', confidence: 0, language: 'en', details: {}, safety_flags: [],\n          summary: 'PARSE FAILED - stopReason: ' + r.stopReason + '; keys: ' + Object.keys(r).join(', ') };\n  }\n  const t = tokens(r);\n  const env = $('envelope').all()[idx].json;    // HTTP response replaced our data\n\n  return { json: { ...env,\n    classification: c,\n    classify_model: MODEL,\n    classify_tokens: t,\n    classify_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});"
       },
       "id": "3918ab41-9393-4f3e-a5ab-93e7e0c75fb9",
       "name": "parse classification",
@@ -146,7 +146,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('config').first().json.llm_url }}",
+        "url": "={{ $('config').first().json.bedrock_base + '/model/' + $('config').first().json.draft_model + '/converse' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -178,7 +178,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Every branch arrives here: escalate (no draft), escalate-at-gate-2 / blocked (draft kept, blocked),\n// clarify and auto_send (validated draft).\nreturn $input.all().map(item => {\n  const p = item.json;\n  const c = p.classification;\n  const classifyCost = p.classify_cost_usd ?? 0;\n  const draftCost = p.draft_cost_usd ?? 0;\n  const verifyCost = p.verify_cost_usd ?? 0;\n\n  return { json: {\n    id: p.id,\n    source: p.source,\n    external_key: p.external_key,\n    received_at: p.received_at,\n    from_email: p.from_email,\n    subject: p.subject,\n    body: p.body,\n    category: c.category,\n    confidence: c.confidence,\n    language: c.language,\n    safety_flags: JSON.stringify(c.safety_flags ?? []),\n    missing_slots: JSON.stringify(c.missing_slots ?? []),\n    action: p.action,\n    draft_reply: p.draft_reply ?? '',\n    draft_stage: p.draft_stage ?? '',           // 'draft' | 'clarify' | '' (no model call)\n    answerable: p.answerable ?? null,\n    unanswered: p.unanswered ?? '',\n    validated: p.validated === true,\n    reply_blocked: p.reply_blocked === true,\n    block_reason: p.block_reason ?? '',\n    grounded_on: JSON.stringify(Object.keys(p.selected_facts ?? {})),\n    draft_tokens: p.draft_tokens ?? null,\n    classify_model: p.classify_model,\n    classify_cost_usd: classifyCost,\n    draft_cost_usd: draftCost,\n    verify_cost_usd: verifyCost,\n    total_cost_usd: Number((classifyCost + draftCost + verifyCost).toFixed(6))\n  }};\n});"
+        "jsCode": "// Every branch arrives here: escalate (no draft), escalate-at-gate-2 / blocked (draft kept, blocked),\n// clarify and auto_send (validated draft).\nreturn $input.all().map(item => {\n  const p = item.json;\n  const c = p.classification;\n  const classifyCost = p.classify_cost_usd ?? 0;\n  const draftCost = p.draft_cost_usd ?? 0;\n  const verifyCost = p.verify_cost_usd ?? 0;\n\n  return { json: {\n    id: p.id,\n    source: p.source,\n    external_key: p.external_key,\n    received_at: p.received_at,\n    from_email: p.from_email,\n    subject: p.subject,\n    body: p.body,\n    category: c.category,\n    confidence: c.confidence,\n    language: c.language,\n    safety_flags: JSON.stringify(c.safety_flags ?? []),\n    missing_slots: JSON.stringify(c.missing_slots ?? []),\n    action: p.action,\n    draft_reply: p.draft_reply ?? '',\n    draft_stage: p.draft_stage ?? '',           // 'draft' | 'clarify' | '' (no model call)\n    answerable: p.answerable ?? null,\n    unanswered: p.unanswered ?? '',\n    validated: p.validated === true,\n    reply_blocked: p.reply_blocked === true,\n    block_reason: p.block_reason ?? '',\n    grounded_on: JSON.stringify(Object.keys(p.selected_facts ?? {})),\n    draft_tokens: p.draft_tokens ?? null,\n    classify_model: p.classify_model,\n    draft_model: p.draft_model ?? null,\n    verify_model: p.verify_model ?? null,\n    classify_cost_usd: classifyCost,\n    draft_cost_usd: draftCost,\n    verify_cost_usd: verifyCost,\n    total_cost_usd: Number((classifyCost + draftCost + verifyCost).toFixed(6))\n  }};\n});"
       },
       "id": "4db82172-3ce9-410c-85aa-450bf68bcd44",
       "name": "prepare row",
@@ -315,9 +315,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "insert into run_log (enquiry_id, stage, status, attempt, model, cost_usd, error)\nselect $1::uuid, 'classify', 'ok', 1, $2::text, $3::numeric, null::text\nunion all\nselect $1::uuid, $5::text, 'ok', 1, $2::text, $4::numeric, null::text where $5::text <> ''\nunion all\nselect $1::uuid, 'verify', 'ok', 1, $2::text, $9::numeric, null::text where $9::numeric > 0\nunion all\nselect $1::uuid, 'validate', case when $6::boolean then 'failed' else 'ok' end, 1, null::text,\n       0::numeric, nullif($7::text, '') where $8::boolean;",
+        "query": "insert into run_log (enquiry_id, stage, status, attempt, model, cost_usd, error)\nselect $1::uuid, 'classify', 'ok', 1, $2::text, $3::numeric, null::text\nunion all\nselect $1::uuid, $5::text, 'ok', 1, $10::text, $4::numeric, null::text where $5::text <> ''\nunion all\nselect $1::uuid, 'verify', 'ok', 1, $11::text, $9::numeric, null::text where $9::numeric > 0\nunion all\nselect $1::uuid, 'validate', case when $6::boolean then 'failed' else 'ok' end, 1, null::text,\n       0::numeric, nullif($7::text, '') where $8::boolean;",
         "options": {
-          "queryReplacement": "={{ [ $('prepare row').first().json.id, $('prepare row').first().json.classify_model, $('prepare row').first().json.classify_cost_usd, $('prepare row').first().json.draft_cost_usd, $('prepare row').first().json.draft_stage, $('prepare row').first().json.reply_blocked, $('prepare row').first().json.block_reason, $('prepare row').first().json.validated, $('prepare row').first().json.verify_cost_usd ] }}"
+          "queryReplacement": "={{ [ $('prepare row').first().json.id, $('prepare row').first().json.classify_model, $('prepare row').first().json.classify_cost_usd, $('prepare row').first().json.draft_cost_usd, $('prepare row').first().json.draft_stage, $('prepare row').first().json.reply_blocked, $('prepare row').first().json.block_reason, $('prepare row').first().json.validated, $('prepare row').first().json.verify_cost_usd, $('prepare row').first().json.draft_model, $('prepare row').first().json.verify_model ] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -342,34 +342,40 @@
         "assignments": {
           "assignments": [
             {
-              "id": "cfg-provider",
-              "name": "llm_provider",
-              "value": "bedrock",
+              "id": "cfg-base",
+              "name": "bedrock_base",
+              "value": "https://bedrock-runtime.ap-southeast-1.amazonaws.com",
               "type": "string"
             },
             {
-              "id": "cfg-url",
-              "name": "llm_url",
-              "value": "https://bedrock-runtime.ap-southeast-1.amazonaws.com/model/global.amazon.nova-2-lite-v1:0/converse",
-              "type": "string"
-            },
-            {
-              "id": "cfg-model",
-              "name": "llm_model",
+              "id": "cfg-m-classify",
+              "name": "classify_model",
               "value": "global.amazon.nova-2-lite-v1:0",
               "type": "string"
             },
             {
-              "id": "cfg-price-in",
-              "name": "llm_price_in_per_mtok",
-              "value": 0.3,
-              "type": "number"
+              "id": "cfg-m-draft",
+              "name": "draft_model",
+              "value": "global.amazon.nova-2-lite-v1:0",
+              "type": "string"
             },
             {
-              "id": "cfg-price-out",
-              "name": "llm_price_out_per_mtok",
-              "value": 2.5,
-              "type": "number"
+              "id": "cfg-m-verify",
+              "name": "verify_model",
+              "value": "global.amazon.nova-2-lite-v1:0",
+              "type": "string"
+            },
+            {
+              "id": "cfg-m-clarify",
+              "name": "clarify_model",
+              "value": "global.amazon.nova-2-lite-v1:0",
+              "type": "string"
+            },
+            {
+              "id": "cfg-prices",
+              "name": "model_prices",
+              "value": "{\"global.amazon.nova-2-lite-v1:0\":{\"in\":0.41,\"out\":3.39},\"apac.amazon.nova-micro-v1:0\":{\"in\":0.047,\"out\":0.188},\"apac.amazon.nova-lite-v1:0\":{\"in\":0.081,\"out\":0.324},\"apac.amazon.nova-pro-v1:0\":{\"in\":1.08,\"out\":4.32}}",
+              "type": "string"
             },
             {
               "id": "cfg-review",
@@ -391,7 +397,7 @@
         0
       ],
       "notesInFlow": true,
-      "notes": "Model settings in ONE place. Swap provider = edit this node"
+      "notes": "One model per stage (classify / draft / verify / clarify) and a price table in $ per million tokens. Change a stage's model = edit its *_model here; its price comes from model_prices"
     },
     {
       "parameters": {
@@ -524,7 +530,7 @@
       "typeVersion": 3.4,
       "position": [
         896,
-        592
+        544
       ],
       "notesInFlow": true,
       "notes": "First match wins. Flags above everything: a flag at 0.99 confidence still escalates. Confidence is NOT used"
@@ -609,7 +615,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('config').first().json;\nconst IN = cfg.llm_price_in_per_mtok, OUT = cfg.llm_price_out_per_mtok;   // $ per MTok\n\nconst blocks = r => r?.output?.message?.content ?? [];\n\n// Forced tool -> {reply, answerable, unanswered}. If the model answered in plain text instead,\n// keep the text but treat it as NOT answerable: when unsure, a human looks.\nfunction extract(r) {\n  const tool = blocks(r).find(b => b.toolUse)?.toolUse;\n  if (tool && typeof tool.input === 'object') return tool.input;\n  const text = blocks(r).filter(b => typeof b.text === 'string').map(b => b.text).join('').trim();\n  return { reply: text || ('PARSE FAILED - stopReason: ' + r.stopReason), answerable: false,\n           unanswered: 'draft did not use the write_reply tool' };\n}\n// Same as `parse classification` - keep them in step.\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  // HTTP response replaced our data - take it back from the node before the call\n  const { requestBody, ...prev } = $('build draft request').all()[idx].json;\n  const out = extract(r);\n  const t = tokens(r);\n  return { json: { ...prev,\n    draft_reply: String(out.reply ?? '').trim(),\n    answerable: out.answerable === true,\n    unanswered: String(out.unanswered ?? ''),\n    draft_stage: 'draft',\n    draft_tokens: t,\n    draft_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});"
+        "jsCode": "const cfg = $('config').first().json;\nconst MODEL = cfg.draft_model;\nconst PRICE = JSON.parse(cfg.model_prices)[MODEL];\nif (!PRICE) throw new Error('No price for model ' + MODEL + ' in config.model_prices');\nconst IN = PRICE.in, OUT = PRICE.out;   // $ per MTok\n\nconst blocks = r => r?.output?.message?.content ?? [];\n\n// Forced tool -> {reply, answerable, unanswered}. If the model answered in plain text instead,\n// keep the text but treat it as NOT answerable: when unsure, a human looks.\nfunction extract(r) {\n  const tool = blocks(r).find(b => b.toolUse)?.toolUse;\n  if (tool && typeof tool.input === 'object') return tool.input;\n  const text = blocks(r).filter(b => typeof b.text === 'string').map(b => b.text).join('').trim();\n  return { reply: text || ('PARSE FAILED - stopReason: ' + r.stopReason), answerable: false,\n           unanswered: 'draft did not use the write_reply tool' };\n}\n// Same as `parse classification` - keep them in step.\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  // HTTP response replaced our data - take it back from the node before the call\n  const { requestBody, ...prev } = $('build draft request').all()[idx].json;\n  const out = extract(r);\n  const t = tokens(r);\n  return { json: { ...prev,\n    draft_reply: String(out.reply ?? '').trim(),\n    answerable: out.answerable === true,\n    unanswered: String(out.unanswered ?? ''),\n    draft_stage: 'draft',\n    draft_model: MODEL,\n    draft_tokens: t,\n    draft_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});"
       },
       "id": "8394b775-35e4-4b54-8524-59e898f043e8",
       "name": "read draft",
@@ -714,7 +720,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('config').first().json.llm_url }}",
+        "url": "={{ $('config').first().json.bedrock_base + '/model/' + $('config').first().json.clarify_model + '/converse' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -746,7 +752,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('config').first().json;\nconst IN = cfg.llm_price_in_per_mtok, OUT = cfg.llm_price_out_per_mtok;   // $ per MTok\n\nfunction extractText(r) {\n  const parts = (r?.output?.message?.content ?? [])\n    .filter(b => typeof b.text === 'string').map(b => b.text);\n  return parts.length ? parts.join('') : undefined;\n}\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n// \"One question\" is checked here, not trusted. 0 or 2+ question marks -> fixed template.\nconst questions = s => (s.match(/[?？]/g) || []).length;\n\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  const { requestBody, ...prev } = $('build clarify request').all()[idx].json;\n  let reply = (extractText(r) ?? '').trim();\n  const fallback = questions(reply) !== 1;\n  if (fallback) reply = 'Thanks for getting in touch! So we can point you in the right direction, ' +\n                        'could you tell us ' + prev.clarify_want + '?';\n  const t = tokens(r);\n  return { json: { ...prev,\n    draft_reply: reply,\n    clarify_fallback: fallback,\n    draft_stage: 'clarify',\n    draft_tokens: t,\n    draft_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});"
+        "jsCode": "const cfg = $('config').first().json;\nconst MODEL = cfg.clarify_model;\nconst PRICE = JSON.parse(cfg.model_prices)[MODEL];\nif (!PRICE) throw new Error('No price for model ' + MODEL + ' in config.model_prices');\nconst IN = PRICE.in, OUT = PRICE.out;   // $ per MTok\n\nfunction extractText(r) {\n  const parts = (r?.output?.message?.content ?? [])\n    .filter(b => typeof b.text === 'string').map(b => b.text);\n  return parts.length ? parts.join('') : undefined;\n}\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n// \"One question\" is checked here, not trusted. 0 or 2+ question marks -> fixed template.\nconst questions = s => (s.match(/[?？]/g) || []).length;\n\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  const { requestBody, ...prev } = $('build clarify request').all()[idx].json;\n  let reply = (extractText(r) ?? '').trim();\n  const fallback = questions(reply) !== 1;\n  if (fallback) reply = 'Thanks for getting in touch! So we can point you in the right direction, ' +\n                        'could you tell us ' + prev.clarify_want + '?';\n  const t = tokens(r);\n  return { json: { ...prev,\n    draft_reply: reply,\n    clarify_fallback: fallback,\n    draft_stage: 'clarify',\n    draft_model: MODEL,\n    draft_tokens: t,\n    draft_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});"
       },
       "id": "790fac89-b298-4790-9359-c365ed21198a",
       "name": "read clarify",
@@ -986,7 +992,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $('config').first().json.llm_url }}",
+        "url": "={{ $('config').first().json.bedrock_base + '/model/' + $('config').first().json.verify_model + '/converse' }}",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
@@ -1018,7 +1024,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('config').first().json;\nconst IN = cfg.llm_price_in_per_mtok, OUT = cfg.llm_price_out_per_mtok;   // $ per MTok\n\nconst blocks = r => r?.output?.message?.content ?? [];\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n\n// Every claim must come back supported === true. No usable tool result -> treat as a problem:\n// when the check can't run, a human looks.\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  const { requestBody, ...prev } = $('build verify request').all()[idx].json;\n  const tool = blocks(r).find(b => b.toolUse)?.toolUse;\n  const claims = Array.isArray(tool?.input?.claims) ? tool.input.claims : null;\n  const claim_problems = claims === null\n    ? ['claim check returned no result']\n    : claims.filter(c => c.supported !== true).map(c =>\n        'unsupported claim \"' + String(c.claim ?? '').slice(0, 120) + '\"' +\n        (c.evidence ? ' (' + String(c.evidence).slice(0, 100) + ')' : ''));\n  const t = tokens(r);\n  return { json: { ...prev,\n    claims: claims ?? [],\n    claim_problems,\n    verify_tokens: t,\n    verify_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});\n"
+        "jsCode": "const cfg = $('config').first().json;\nconst MODEL = cfg.verify_model;\nconst PRICE = JSON.parse(cfg.model_prices)[MODEL];\nif (!PRICE) throw new Error('No price for model ' + MODEL + ' in config.model_prices');\nconst IN = PRICE.in, OUT = PRICE.out;   // $ per MTok\n\nconst blocks = r => r?.output?.message?.content ?? [];\nfunction tokens(r) {\n  const u = r.usage || {};\n  return { input: u.inputTokens ?? 0, output: u.outputTokens ?? 0 };\n}\n\n// Every claim must come back supported === true. No usable tool result -> treat as a problem:\n// when the check can't run, a human looks.\nreturn $input.all().map((item, idx) => {\n  const r = item.json;\n  const { requestBody, ...prev } = $('build verify request').all()[idx].json;\n  const tool = blocks(r).find(b => b.toolUse)?.toolUse;\n  const claims = Array.isArray(tool?.input?.claims) ? tool.input.claims : null;\n  const claim_problems = claims === null\n    ? ['claim check returned no result']\n    : claims.filter(c => c.supported !== true).map(c =>\n        'unsupported claim \"' + String(c.claim ?? '').slice(0, 120) + '\"' +\n        (c.evidence ? ' (' + String(c.evidence).slice(0, 100) + ')' : ''));\n  const t = tokens(r);\n  return { json: { ...prev,\n    claims: claims ?? [],\n    claim_problems,\n    verify_tokens: t,\n    verify_model: MODEL,\n    verify_cost_usd: t.input / 1e6 * IN + t.output / 1e6 * OUT\n  }};\n});\n"
       },
       "id": "vfy-read",
       "name": "read verify",
@@ -1127,14 +1133,14 @@
         2096
       ],
       "notesInFlow": true,
-      "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad",
       "credentials": {
         "telegramApi": {
           "id": "f0NSkRcTr0rBgguW",
           "name": "Telegram - alerts bot"
         }
       },
-      "notes": "Category + action + Open review link. NO customer data in Telegram. Link works on the tailnet only"
+      "notes": "Category + action + Open review link. NO customer data in Telegram. Link works on the tailnet only",
+      "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad"
     },
     {
       "parameters": {
@@ -1174,6 +1180,7 @@
     },
     {
       "parameters": {},
+      "id": "533c634d-3a84-47f1-81f7-91649b0ac03b",
       "name": "to record",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
@@ -1182,8 +1189,7 @@
         1696
       ],
       "notesInFlow": true,
-      "notes": "Join point: every branch meets here, one line into ④. Passes items through unchanged",
-      "id": "533c634d-3a84-47f1-81f7-91649b0ac03b"
+      "notes": "Join point: every branch meets here, one line into ④. Passes items through unchanged"
     }
   ],
   "pinData": {},
@@ -1370,17 +1376,6 @@
         ]
       ]
     },
-    "action = escalate": {
-      "main": [
-        [
-          {
-            "node": "to record",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "read draft": {
       "main": [
         [
@@ -1404,17 +1399,6 @@
         [
           {
             "node": "action = escalate (gate 2)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "action = escalate (gate 2)": {
-      "main": [
-        [
-          {
-            "node": "to record",
             "type": "main",
             "index": 0
           }
@@ -1459,17 +1443,6 @@
         [
           {
             "node": "validate claims",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "validate claims": {
-      "main": [
-        [
-          {
-            "node": "to record",
             "type": "main",
             "index": 0
           }
@@ -1644,6 +1617,39 @@
         ]
       ]
     },
+    "validate claims": {
+      "main": [
+        [
+          {
+            "node": "to record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "action = escalate (gate 2)": {
+      "main": [
+        [
+          {
+            "node": "to record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "action = escalate": {
+      "main": [
+        [
+          {
+            "node": "to record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "to record": {
       "main": [
         [
@@ -1656,7 +1662,6 @@
       ]
     }
   },
-  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate",
@@ -1664,12 +1669,7 @@
     "saveDataSuccessExecution": "all",
     "errorWorkflow": "BSmcb09mPBarqPjO"
   },
-  "versionId": "55d498b6-0a67-405f-ae5b-87bfa352d174",
   "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "79a6d2ca2cf0182b388c19c7c653ce5ad811e23004b52e0c272275de6898d98b"
-  },
-  "nodeGroups": [],
-  "id": "9OtHm7FyRtNdUl1p",
-  "tags": []
+    "templateCredsSetupCompleted": true
+  }
 }

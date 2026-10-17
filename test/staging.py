@@ -10,6 +10,7 @@ builder works on a staging copy, and a person promotes a change to production.
                                          # un-promoted staging work: `export` first)
     python3 test/staging.py status    # show ids, active state and the staging webhook path
     python3 test/staging.py export    # write the staging intake to workflows/01-intake.staging.json (chat id placeholdered)
+    python3 test/staging.py export --live   # the LIVE intake -> workflows/01-intake.mine.json (read-only on n8n)
     python3 test/staging.py models    # which model each stage uses on staging
     python3 test/staging.py set-model classify=apac.amazon.nova-micro-v1:0 [draft=... verify=... clarify=... | all=...]
     python3 test/staging.py promote        # SHOW what would change in the LIVE intake workflow (read-only)
@@ -150,15 +151,16 @@ def cmd_export(args):
     The Telegram chat id is replaced by the {{ALERT_CHAT_ID}} placeholder; the real value stays in .env.
     This is also how a change gets promoted: a person imports this file into the live workflow, then runs `sync`.
     """
+    live = "--live" in args
     st = load_state()
-    if not st:
+    if not live and not st:
         sys.exit("No staging.json yet. Run `create` first.")
-    w = api("GET", f"/workflows/{st['intake']}")
+    w = api("GET", f"/workflows/{PROD['intake'] if live else st['intake']}")
     for n in w["nodes"]:
         if n["type"].endswith(".telegram") and "chatId" in n["parameters"]:
             n["parameters"]["chatId"] = "{{ALERT_CHAT_ID}}"
     out = {k: w[k] for k in ("name", "nodes", "pinData", "connections", "settings", "meta") if k in w}
-    path = HERE.parent / "workflows" / "01-intake.staging.json"
+    path = HERE.parent / "workflows" / ("01-intake.mine.json" if live else "01-intake.staging.json")
     path.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
     print(f"wrote {path.relative_to(HERE.parent)} ({len(w['nodes'])} nodes)")
 

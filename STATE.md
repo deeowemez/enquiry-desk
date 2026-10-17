@@ -10,15 +10,16 @@ customers are in UTC+8. It classifies each enquiry, answers only from a fact tab
 storing a reply, routes risky cases to a person on their phone, and never loses an enquiry. Runs on **Amazon
 Nova 2 Lite (Bedrock)**, paid from the AWS Free Tier credit ($99, expires 2027-03-09; **rule: credits only**).
 
-Latest full runs `20261017-082124` / `-082529` (staging, same graph as production), 24 hand-labelled cases:
+Latest full run on the **live** workflow, `20261017-113732` (and two staging runs that match it), 24 hand-labelled cases:
 
 | Category | Safety flags | Missing slots | **Actions** | Invented claims in sendable replies | Failed runs | Cost / enquiry |
 |---|---|---|---|---|---|---|
 | 22/24 | **6/6** | 6/6 | **21/24** (both runs) | **0** | 0 | **~$0.0023** (corrected prices) |
 
 **Cost note:** runs before 2026-10-17 used the wrong per-token price and under-stated cost by ~36% (they show ~$0.0018
-for what is really ~$0.0025). Compare cost only between runs made after the correction. Last run on the *live* workflow:
-`20261011-030241`, 22/24 · 6/6 · 23/24 (23/24 vs 21/24 sits at the edge of the usual ±1–2/24 run-to-run spread; the graph and prompts did not change, only the layout and the per-stage config).
+for what is really ~$0.0025). Compare cost only between runs made after the correction. The earlier live run
+`20261011-030241` scored 22/24 · 6/6 · 23/24; 23/24 vs 21/24 sits at the edge of the usual ±1–2/24 spread (the prompts did not
+change, only the layout and the per-stage config).
 
 The one action "miss" is t06 → `blocked`: the draft calculated a £190 bundle price and the validator stopped
 it (label says `escalate`; both reach a human). **Nothing is emailed to customers** — approved replies get
@@ -213,7 +214,7 @@ Record in segments, about 4–5 minutes.
 - **Decision rule:** a model set qualifies only if **safety flags stay 6/6, invented claims stay 0 and actions
   don't drop**; among those, lowest cost per enquiry wins. Judge on ≥2 runs — run-to-run variance is ±1–2/24.
 
-**Per-stage config (built 2026-10-17, on staging only until promoted).** The `config` node now holds `bedrock_base`,
+**Per-stage config (built 2026-10-17; promoted to live the same day and verified by a full live run).** The `config` node now holds `bedrock_base`,
 one model per stage (`classify_model`, `draft_model`, `verify_model`, `clarify_model`) and `model_prices`, a JSON table of
 $ per million tokens keyed by model id. To try a model on one stage, edit that stage's `*_model` and nothing else. The
 four HTTP nodes build their URL from their stage's model; each `read …`/`parse …` node prices its call from the table
@@ -312,6 +313,7 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261017-075438` | 22/24 | 6/6 | 6/6 | 21/24 | 0/11 | $0.00174 | Staging run #2: passes the gate; the ±1 spread (**old prices**) |
 | `20261017-082124` | 22/24 | 6/6 | 6/6 | 21/24 | 0/10 | $0.00240 | **Per-stage config + corrected prices: new baseline** |
 | `20261017-082529` | 22/24 | 6/6 | 6/6 | 21/24 | 0/9 | $0.00219 | Same config, run #2 |
+| `20261017-113732` | 22/24 | 6/6 | 6/6 | 21/24 | 0/10 | $0.00226 | **LIVE after the corrective promotion**: matches staging, all gates pass; `run_log` shows each stage's own model |
 | `20261017-083240` / `-083613` | 17/24 | 6/6 | 5/6 | 13/24 | 0 | $0.00066 | `classify` = Nova Micro: fails the gate |
 | `20261017-083955` / `-084347` | 19/24 | 6/6 | 5/6 | 21/24 | 0 | $0.00134 | `classify` = Nova Lite: fails (category) |
 | `20261017-084744` / `-085139` | 20/24 | 6/6 | 5/6 | 19–20/24 | 0 | $0.00246 | `classify` = Nova Pro: fails, and costs more than the baseline |
@@ -384,8 +386,8 @@ in intake + errors) → commit **without** an attribution trailer.
 - **The `config` prices were wrong, and every cost figure before 2026-10-17 was ~36% too low.** `$0.30 / $2.50` per
   million tokens is Nova 2 Lite's us-east-1 list price. Through the `global` profile from `ap-southeast-1` AWS bills
   **$0.41 / $3.39**: confirmed in Cost Explorer (gross, 948.1K input tokens → $0.3887, 82.1K output → $0.2783, 2026-10-10..13).
-  Token counts matched what the workflow logged, so only the price was off. Fixed on staging; the live `config` still has
-  the old numbers until promoted. **Never trust a price from memory: read the Price List API, then check against billing.**
+  Token counts matched what the workflow logged, so only the price was off. Fixed on staging, then promoted to live
+  (verified by a full run on the live URL). **Never trust a price from memory: read the Price List API, then check against billing.**
 - **Cost Explorer shows $0.00 on credits** unless you filter `RECORD_TYPE = Usage` (the credit nets the cost out). Use
   `aws ce get-cost-and-usage … --filter '{"Dimensions":{"Key":"RECORD_TYPE","Values":["Usage"]}}' --group-by Type=DIMENSION,Key=USAGE_TYPE`
   with the `sandbox-26` profile. Prices: `aws pricing get-products --service-code AmazonBedrock --region us-east-1 --filters

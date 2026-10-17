@@ -1,174 +1,127 @@
-# Importing `01-intake.json`
+# Importing the workflows
 
-## Prerequisite
+Three workflows make up the system. Import them in this order, because the first two are referenced by the third:
 
-The `normalise` node uses Node's `crypto` module, which n8n blocks by default. Your n8n container
-needs this in its `environment:` — then `docker compose up -d`:
+| File | Workflow | Role |
+|---|---|---|
+| `01-errors.json` | `01 Enquiry Desk - errors` | Failure path: marks the row `failed`, logs it, sends a Telegram alert |
+| `01-review.json` | `01 Enquiry Desk - review` | The human review page, and the Gmail draft on approve |
+| `01-intake.mine.json` | `01 Enquiry Desk` (intake) | The pipeline: webhook → classify → route → draft or clarify → verify → record |
 
-```yaml
-- NODE_FUNCTION_ALLOW_BUILTIN=crypto
-```
+`01-intake.staging.json` and `01-review.staging.json` are exports of the **staging copies** (see the last section).
+You don't need them to run the system.
 
-Without it, `normalise` fails with `Module 'crypto' is disallowed`.
+## Before you import
 
-## How to import
-
-n8n → **Overview** → **Create Workflow** → top-right **⋯** menu → **Import from File…**
-(or **Import from URL**). Pick `01-intake.json`. Save.
-
-You should see 11 nodes in one line, surrounded by **6 sticky notes**. Two nodes will show a red
-warning triangle — that's expected, it's the missing credentials.
-
-**Read the canvas before you touch anything.** The big grey note above the flow explains what the
-whole thing does and the one design decision worth defending; the blue notes label the four stages;
-the red note at the bottom lists what session 1 deliberately leaves out. Every node also carries a
-one-line description underneath it on the canvas (`notesInFlow`), so you can read the whole flow
-without opening a single node.
-
-If you'd rather not see the per-node captions, open a node → **Settings** → untick
-**Display note in flow**.
-
----
-
-## What you MUST change — 3 things
-
-### 1. One Gemini credential (nodes `classify` and `draft`)
-
-Both model calls run on **Gemini 3.8 Flash, free tier**. One credential, used twice.
-
-1. Get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-2. Open **`classify`** → **Credential for Header Auth** → **Create new credential**
-3. **Name:** `x-goog-api-key` · **Value:** your Gemini key
-4. Save it as `Gemini - x-goog-api-key`
-5. Open **`draft`** and pick the *same* credential from the dropdown — don't create a second one
-
-> **Free-tier data terms:** Google states that free-tier content is **used to improve its
-> products**. That's fine here because every enquiry is synthetic. **Never put real client or
-> customer data through the free tier.** For paid client work, use the paid tier, where content
-> is not used.
-
-### 2. The Postgres credential (node `insert enquiry`)
-
-1. Run the schema first:
+1. **Postgres.** Create the tables and views:
    `psql -h <host> -U <user> -d <db> -f ../schema/schema.sql`
-2. Open **`insert enquiry`** → **Create new credential**
-3. Host, Port `5432`, Database, User, Password
-4. **If n8n runs in Docker, the host is NOT `localhost`** — use `host.docker.internal`, or the
-   Postgres service name from your compose file
+2. **n8n environment.** The `normalise` node uses Node's `crypto`, which n8n blocks by default. Add this to the
+   container's `environment:` and restart:
+   ```yaml
+   - NODE_FUNCTION_ALLOW_BUILTIN=crypto
+   ```
+   Without it, `normalise` fails with `Module 'crypto' is disallowed`.
+3. **Credentials.** Create these in n8n (Credentials → New). Names matter only for your own sanity; you will pick
+   them from dropdowns after import.
 
-### 3. Get the webhook URL
+   | Credential | Type | Used by |
+   |---|---|---|
+   | `Bedrock - API key` | Header Auth: name `Authorization`, value `Bearer <your Bedrock API key>` | `classify`, `draft`, `verify`, `clarify` |
+   | `Postgres account` | Postgres. **If n8n runs in Docker the host is not `localhost`**: use the Postgres service name from your compose file or `host.docker.internal` | every Postgres node |
+   | `Telegram - alerts bot` | Telegram API (bot token from @BotFather → `/newbot`; open the bot and press *Start*) | `telegram alert`, `review alert` |
+   | `Gmail - drafts` | Gmail OAuth2 API (below) | `create gmail draft` |
 
-Open **`Webhook`** → copy the **Test URL**. The Production URL only works once the workflow is
-**Activated**, which you don't need yet.
+   **Gmail OAuth2.** In Google Cloud, create a project, enable the **Gmail API**, configure the consent screen
+   (External; add your mailbox as a test user, and publish the app so the refresh token does not expire after 7
+   days), then create an **OAuth client ID** of type *Web application* whose redirect URI is
+   `https://<your-n8n>/rest/oauth2-credential/callback`. Paste its client ID and secret into n8n and click
+   **Sign in with Google**. Use a **dedicated mailbox**, not a personal one, because the credential's scopes are
+   broad. The workflow only ever creates drafts; it has no send node.
 
----
+   Models are Amazon Nova on Bedrock (`ap-southeast-1`). Bedrock needs access to the Nova models in your account.
+
+> **Synthetic data only** until you have confirmed Bedrock's data terms for your use. Never put real customer data
+> through this project as it stands.
+
+## Import
+
+n8n → **Overview** → **Create Workflow** → top-right **⋯** → **Import from File…**, once per file. Imported nodes
+show a red warning triangle until a credential is attached. Open each such node and pick the credential from the
+dropdown.
+
+### 1. `01-errors.json`
+
+1. Attach `Postgres account` to `mark failed` and `log failure`, and `Telegram - alerts bot` to `telegram alert`.
+2. **Chat ID.** The committed file has the placeholder `{{ALERT_CHAT_ID}}` in `telegram alert` → *Chat ID*. Replace it
+   with your numeric chat ID (ask **@userinfobot**). Keep the real value out of any file you commit; this repo's
+   `.env` (gitignored) holds it as `ALERT_CHAT_ID`.
+3. **Publish** the workflow.
+
+### 2. `01-review.json`
+
+1. Attach `Postgres account` to `load enquiry`, `apply decision` and `record draft`, and `Gmail - drafts` to
+   `create gmail draft`.
+2. **Publish** it. It serves two endpoints:
+   - `GET /webhook/review?id=…&t=…`: the read-only page. A row matches only when the id **and** the token agree.
+   - `POST /webhook/review-act`: the page's *Approve* and *Take over* buttons.
+3. **What approve does.** It sets `approved_at`, then `draft needed?` lets an approved reply through to
+   `create gmail draft`, which writes `Re: <subject>` addressed to the customer into the mailbox's **Drafts**
+   folder. `record draft` stores `drafted_at` and `gmail_draft_id`, or `draft_error` if Gmail failed. A Gmail
+   failure never undoes the approval. **Nothing is ever sent automatically**: a person opens the draft and presses
+   Send, and `sent_at` stays empty.
+4. **Reachability.** The page is meant for a private network such as your **tailnet** (Tailscale Serve, not
+   Funnel). The phone needs the Tailscale app connected. Telegram never fetches the link, so nothing needs to be
+   public.
+
+### 3. `01-intake.mine.json`
+
+1. Attach `Bedrock - API key` to `classify`, `draft`, `verify` and `clarify`, `Postgres account` to `record received`,
+   `update enquiry`, `insert run_log`, `insert reply` and `open review`, and `Telegram - alerts bot` to
+   `review alert`. In `review alert`, replace the `{{ALERT_CHAT_ID}}` placeholder.
+2. **`config` node.** Set `review_base_url` to `https://<your-n8n>/webhook/review`. The same node holds the model
+   for each stage and the price table used for cost figures. Change a stage's model there, and add its prices to
+   `model_prices`.
+3. **Error workflow.** Intake → **Settings** → **Error workflow** → `01 Enquiry Desk - errors` → Save.
+4. **Publish.** n8n 2.x has *Publish* instead of an Active toggle: saving changes only the draft, and the production
+   webhook serves the **published** version.
+5. **`facts` node.** It is a hand copy of `../kb/facts.yaml`. They will drift, so change both.
 
 ## First run
 
 ```bash
-curl -X POST '<your Test URL>' \
+curl -X POST 'https://<your-n8n>/webhook/enquiry' \
   -H 'content-type: application/json' \
   -d '{"email":"parent@example.com","subject":"A-Level Biology","message":"How much is Biology A-Level per month?"}'
 ```
 
-1. Open `Webhook`, click **Listen for test event**
-2. Send the curl above
-3. **Pin** the Webhook output so you never send it again
-4. Then work left to right: open each node, **Test step**, read the OUTPUT panel
+You should get `202` with a reference id within about half a second, and a row in `enquiry` with `status =
+'processed'` a few seconds later. A missing or invalid `email` returns `400`, and a repeat of the same enquiry on the
+same day returns `200` with `duplicate`. To exercise the failure path, POST something that fails in `normalise`
+(for example a broken body) and watch for the Telegram alert. Use the production webhook, not *Execute workflow*:
+the Error Trigger fires for production runs only.
 
-Expected end state: one row in `enquiry`, and a sensible reply visible in `prepare row`'s output
-under `draft_reply`.
-
----
+To score the 24 labelled cases, see `python3 test/score.py --help`.
 
 ## If a node looks broken after import
 
-Node parameter shapes change between n8n versions. If a node shows *"unknown node type"*, or opens
-with empty/wrong fields, the `typeVersion` in this file doesn't match your n8n.
+Node parameter shapes change between n8n versions. If a node shows "unknown node type" or opens with empty or wrong
+fields, its `typeVersion` does not match your n8n. These exports were built on **n8n 2.26.8**. The fix is to delete
+that node, add a fresh one of the same type, copy the parameters across from the export, and reconnect it. The
+Postgres nodes are the most likely: the query-parameter field is `options.queryReplacement`, and its expression
+list must match `$1..$n` in the query.
 
-**The fix is always the same:** delete that node, add a fresh one of the same type, copy the
-parameters across from [PROJECT-01-BUILD-GUIDE.md](../../../aian/get-rich/PROJECT-01-BUILD-GUIDE.md),
-and reconnect it.
+## Staging copies (optional)
 
-Versions I built against:
+`test/staging.py` builds copies of the intake, errors and review workflows with their own webhooks
+(`/webhook/enquiry-staging`, `/webhook/review-staging`, `/webhook/review-act-staging`) and no Telegram. Changes are
+scored there, and only a person promotes them to the live workflow:
 
-| Node | type | typeVersion |
-|---|---|---|
-| Webhook | `n8n-nodes-base.webhook` | 2 |
-| Code ×6 | `n8n-nodes-base.code` | 2 |
-| HTTP Request ×2 | `n8n-nodes-base.httpRequest` | 4.2 |
-| Postgres | `n8n-nodes-base.postgres` | 2.5 |
+```bash
+export N8N_API_KEY=…                    # never written to a file
+python3 test/staging.py status
+python3 test/staging.py promote         # read-only plan; add --yes to apply (backs up live first)
+python3 test/staging.py rollback --yes  # undo the last promotion
+```
 
-**`insert enquiry` is the one most likely to need rebuilding.** The Postgres node's query-parameter
-field has moved between versions; here it's `options.queryReplacement`. If your version shows it
-elsewhere, put the same comma-separated expression list into whatever the field is called — order
-must match `$1..$12` in the query.
-
----
-
-## Worth changing once it runs
-
-| Where | Why |
-|---|---|
-| `facts` node | It's a hand-copy of `../kb/facts.yaml`. **They will drift.** Edit the node, not just the YAML |
-| `build classify request` | Confidence threshold and categories live here, in `SCHEMA` |
-| `parse classification` | `IN=0, OUT=0` for Gemini free tier. Moving to paid: `0.75` / `3.75` per MTok (through 2026-12-31). If the summary says `PARSE FAILED`, it lists the real response keys — fix `extractText` to match |
-| `prepare row` | `IN=0, OUT=0` for the free tier; same paid rates as above. Its `extractText` must stay identical to the one in `parse classification` |
-| `select facts` | `deadlines` filters on `verified` — that's what makes test case `t11` behave |
-
----
-
-## What this does NOT include
-
-Session 1 only. Deliberately absent:
-
-- **No routing** — every enquiry takes the same path. No escalation gate, no clarify branch. So
-  right now a complaint gets a cheerful auto-draft, which is exactly the problem session 2 fixes
-- **No validator** — nothing yet stops an invented price reaching the draft
-- **No retries, no dead-letter, no alerts** — session 3
-- **No sending** — the reply is drafted and stored, never emailed. Keep it that way until the
-  escalation gate exists
-- **No email intake** — webhook only
-
-Build sessions 2 and 3 by hand following the guide. The branching logic is where the learning is,
-and hand-written Switch nodes are much less error-prone than imported ones.
-
----
-
-# Importing `01-errors.json` (the failure path, session 3)
-
-The intake workflow writes every enquiry to Postgres first (`record received`). If a production run
-then fails, this workflow marks the row `failed` (the `dead_letter` view), logs it in `run_log` and
-sends a Telegram alert with **no customer data** in it.
-
-1. **Import** `01-errors.json` the same way as above.
-2. **Credentials:** `mark failed` and `log failure` use your Postgres credential; `telegram alert` needs
-   a **Telegram API** credential (bot token from @BotFather → `/newbot`). Open the bot and press *Start*.
-3. **Chat ID:** the committed file has the placeholder `{{ALERT_CHAT_ID}}` in `telegram alert` →
-   *Chat ID*. Replace it with your numeric chat ID (ask **@userinfobot**). The real value lives in this
-   repo's `.env` as `ALERT_CHAT_ID` (gitignored) — keep it out of committed files.
-4. **Publish** this workflow, then open the intake workflow → **Settings** → **Error workflow** →
-   `01 Enquiry Desk - errors` → Save → Publish.
-5. **Test through the webhook**, not *Execute workflow* — the Error Trigger only fires for production
-   runs. A POST with no `email` field fails in `normalise` and should produce an alert within seconds.
-
-The `dead_letter` view comes from `schema/schema.sql`.
-
----
-
-# Importing `01-review.json` (human review, session 4)
-
-Escalated and blocked enquiries get `review_status = 'pending'` and a random `review_token`. The
-intake workflow's `review alert` sends a Telegram message (category + action only — **no customer
-data**) with an **Open review** link to this workflow's page.
-
-1. **Import** `01-review.json`. `load enquiry` and `apply decision` use your Postgres credential.
-2. **Publish** it. Endpoints: `GET /webhook/review?id=…&t=…` (read-only page) and
-   `POST /webhook/review-act` (the page's Approve / Take over buttons).
-3. In the intake workflow, set `config` → `review_base_url` to `https://<your-n8n>/webhook/review`, and
-   replace the `{{ALERT_CHAT_ID}}` placeholder in `review alert` → *Chat ID*.
-4. **Reachability:** the page is meant for your **tailnet only** (Tailscale Serve, not Funnel) — the phone
-   needs the Tailscale app connected. Telegram never fetches the link, so nothing needs to be public.
-5. Columns come from `schema/schema.sql` (`enquiry.review_status / review_token / reviewed_at`,
-   `reply.approved_at`). Approving sets `approved_at`; **nothing is emailed** (`sent_at` stays empty).
-6. `score.py` traffic (`test+…@example.com`) still opens a review but sends no Telegram message.
+`promote review` and `rollback review` do the same for the review workflow. Live webhook paths, ids, Telegram state
+and the review link are preserved on promotion.

@@ -32,11 +32,10 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `test/staging.py`, `test/staging.json` | Builds/refreshes the **staging copies** of intake + errors (`/webhook/enquiry-staging`, no Telegram) and the human-review workflow (`/webhook/review-staging`); `promote [review]` / `rollback [review]`. Test changes there; only a person promotes to the live workflow |
 | `test/replay.py` | Re-posts failed enquiries from the `dead_letter` view. `--dry-run` first |
 | `workflows/01-intake.mine.json` | **The live intake workflow** (export after every change) |
-| `workflows/01-intake.staging.json` | Export of the **staging** intake (`test/staging.py export`). Holds un-promoted work, e.g. the per-stage `config` split |
-| `workflows/01-review.staging.json` | Export of the **staging** review workflow, which holds the un-promoted Gmail-draft step |
+| `workflows/01-intake.staging.json` | Export of the **staging** intake (`test/staging.py export`). Matches live unless a change is waiting to be promoted |
+| `workflows/01-review.staging.json` | Export of the **staging** review workflow (the Gmail-draft step went live 2026-10-17) |
 | `workflows/01-errors.json`, `01-review.json` | Failure-path and human-review workflows. Chat ID is a `{{ALERT_CHAT_ID}}` placeholder (real value in `.env`) |
-| `workflows/01-intake.json` | **Answer key** for session 1, not my build |
-| `workflows/IMPORT.md` | How to import the workflows |
+| `workflows/IMPORT.md` | How to import the three workflows, with credentials, `config` and a first run |
 
 ## Environment
 

@@ -336,10 +336,9 @@ is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke 
 - ~~A7 credit check~~ resolved and **confirmed in writing by AWS Support**: only Amazon's first-party models (Nova, Titan) use the credit. Nova only.
 - **Why was the account put on hold (10-11)?** Lifted, cause not recorded. Read the AWS notice before relying on
   the account for the Loom or a pilot.
-- **2 stuck rows** (`status = received`, executions 708 and 710 on 10-11): runs that died during the hold
-  without being marked failed (manual runs; the Error Trigger is production-only), so they're **not** in
-  `dead_letter` and `replay.py` won't see them. Mark them `failed` and replay, or delete them. `stats_health.stuck`
-  will catch the next one.
+- ~~**2 stuck rows**~~ resolved 2026-10-17: marked `failed` by hand (with a `run_log` reason), then replayed with `replay.py` (both processed). They were runs that died during the hold (executions 708 and 710 on 10-11)
+  without being marked failed: manual runs, and the Error Trigger is production-only, so they were not in `dead_letter`.
+  `stats_health.stuck` will catch the next one.
 - **Test traffic piles up reviews:** every full run adds about 11 `pending` reviews (37 pending on 10-17, all
   `test+…`). Filter `is_test` in dashboard panels; consider auto-closing test reviews before the nightly loop runs.
 - **Legacy rows:** 161 enquiries with `status = 'new'` (2026-10-06 → 10, before write-first intake). Kept;
@@ -350,7 +349,7 @@ is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke 
 - **t15 / t23 categories** still wrong (past-paper bank, US admissions → course_content) — replies are correct.
 - **Nothing is sent automatically.** Approve creates a Gmail draft (decision 17); a person presses Send. Reading a real inbox is the next step, ideally for a pilot.
 - `score.py`: no error-type counts (503 / 429 / timeout); stale `--psql` docstring example.
-- Repo: `workflows/01-intake.json` is the session-1 answer key; `test/test.json` is a scratch file.
+- Repo cleanup done 2026-10-17: removed the session-1 answer key (`workflows/01-intake.json`, still in git history) and the scratch `test/test.json`.
 
 ## How to run things
 

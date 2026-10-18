@@ -10,7 +10,7 @@ const make = (user: string, password: string | undefined, database: string, max 
   host: process.env.CONSOLE_DB_HOST ?? 'postgres', port: Number(process.env.CONSOLE_DB_PORT ?? 5432),
   user, password, database, max, idleTimeoutMillis: 30_000,
 });
-const PROD = process.env.CONSOLE_DB_NAME ?? 'n8n';
+const PROD = process.env.CONSOLE_DB_NAME ?? 'enquiry';
 const STG = process.env.CONSOLE_STAGING_DB ?? 'enquiry_staging';
 
 export const factsProd = make('console_facts', process.env.CONSOLE_FACTS_PASSWORD, PROD);

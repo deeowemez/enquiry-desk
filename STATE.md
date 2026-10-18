@@ -297,6 +297,19 @@ non-`test+` addresses so the Telegram alert and the Gmail draft appear on camera
     gate (22/24, 6/6, 23/24, 0 invented, $0.00238). `kb/facts.json` (exported from production v1, identical to the old node, order included) is now the seed for
     `seed-facts.mjs`, the unit tests and `score.py`'s fallback; `kb/facts.yaml` is kept only for its comments. WORKFLOW, IMPORT, README and CLAUDE.md updated.
 
+23. **The Enquiry Desk has its own production database, `enquiry`** (2026-10-18, live). Its tables shared the `n8n` database with
+    n8n's own data (workflows, credentials, executions, users), so a rename was impossible: n8n connects to `n8n` by name. Instead the
+    five tables, the views, indexes, sequences and grants were copied into `enquiry` (rehearsed first into a trial database and diffed:
+    columns, views, indexes, grants and row counts identical), during a 48-second window with the live intake and review workflows
+    deactivated so no enquiry could land in between. The `Postgres account` credential was pointed at `enquiry` with n8n's CLI
+    (`export:credentials --decrypted` → change `database` → `import:credentials`, same id, so no workflow changed; the public API has
+    no credential update). Verified live: new enquiries land in `enquiry` and not `n8n`, the review page reads them, the console reads
+    `enquiry` (`CONSOLE_DB_NAME`), 82 tests pass. The stale copies in `n8n` keep their data for rollback (switch the credential back),
+    have every console grant revoked and a table comment; **drop them after 2026-10-25**. The nightly backup (n8n-stack
+    `scripts/backup.sh`) now also dumps `enquiry` (`BACKUP_EXTRA_DBS`, default `enquiry`; same stamp, verified, pushed, pruned with the
+    pair) and `restore.sh` restores it; a test restore into a scratch database matched every row and all 11 views. Those dumps carry no
+    privileges, so after a restore re-apply `schema/console_role.sql` and `schema/console_roles_phase2.sql`.
+
 ## Model strategy (decided 2026-10-14)
 
 - **Nova models only** while the credit is the budget (rule: credits only). Claude is out until a client pays.
@@ -456,15 +469,15 @@ volume, image, the `:8443` Tailscale Serve entry, the `grafana_ro` role and the 
 ```bash
 set -a; source .env; set +a          # loads WEBHOOK_PROD_URL, ALERT_CHAT_ID
 python3 test/score.py --webhook "$WEBHOOK_PROD_URL" \
-  --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"        # all 24, ~6 min, ~4¢
+  --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d enquiry"        # all 24, ~6 min, ~4¢
 python3 test/replay.py --webhook "$WEBHOOK_PROD_URL" \
-  --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n" --dry-run   # list the dead letters
+  --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d enquiry" --dry-run   # list the dead letters
 
 # Staging (what an automated builder uses; needs N8N_API_KEY in the environment)
 python3 test/staging.py status                     # ids, active state; `sync` re-copies live → staging
 STAGING="${WEBHOOK_PROD_URL%/enquiry}/enquiry-staging"
 python3 test/score.py --webhook "$STAGING" --label "my change" \
-  --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"
+  --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d enquiry"
 python3 test/sweep.py start --exp draft=pro --runs 2 --dry-run   # plan an experiment; then without --dry-run
 python3 test/sweep.py status | stop | report
 python3 test/compare.py                            # table of runs

@@ -16,7 +16,7 @@ services:
       HOST: 0.0.0.0
       PORT: "3100"
       CONSOLE_DB_HOST: postgres
-      CONSOLE_DB_NAME: n8n
+      CONSOLE_DB_NAME: enquiry
       CONSOLE_DB_USER: console_ro
       CONSOLE_STAGING_DB: enquiry_staging
       CONSOLE_STAGING_WEBHOOK: http://n8n:5678/webhook/enquiry-staging

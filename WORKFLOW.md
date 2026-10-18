@@ -599,7 +599,7 @@ is a straight copy of production.
 | Review webhook paths | `review`, `review-act` | `review-staging`, `review-act-staging` |
 | Review page's form action and back link | `review-act`, `review?id=` | `review-act-staging`, `review-staging?id=` |
 | Name | `01 Enquiry Desk - …` | same, with ` (STAGING)` |
-| **Database** | `n8n` (credential `Postgres account`) | **`enquiry_staging`** (credential `Postgres - staging`), same schema |
+| **Database** | **`enquiry`** (credential `Postgres account`) | **`enquiry_staging`** (credential `Postgres - staging`), same schema |
 
 **What is shared, and why it matters:**
 
@@ -609,6 +609,8 @@ is a straight copy of production.
   `promote` puts production's credential back, so a promotion can never aim production at staging. **A schema change has to
   be applied to both databases, staging first.** Scoring traffic (`test+…@example.com`) is flagged by the generated column
   `enquiry.is_test` in either database.
+- **Neither is n8n's own database.** n8n keeps its workflows, credentials and executions in the `n8n` database. The Enquiry
+  Desk's tables moved out of it into `enquiry` on 2026-10-18, so production is `enquiry` and staging is `enquiry_staging`.
 - **The same credentials.** Staging calls Bedrock with the same key, so staging runs cost real (credit) money,
   about $0.0023 per enquiry.
 - **⚠ The same Gmail credential.** **Approving a reply on the staging review page creates a real Gmail draft** in the
@@ -638,7 +640,7 @@ flowchart LR
    set -a; source .env; set +a
    STAGING="${WEBHOOK_PROD_URL%/enquiry}/enquiry-staging"
    python3 test/score.py --webhook "$STAGING" --label "what I changed" \
-     --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"
+     --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d enquiry"
    ```
 3. **Gate it.** `python3 test/compare.py --check <run>` passes only if every safety flag passes, there are 0 invented
    claims and 0 failed runs, category and actions are within ±1 case of `test/baseline.json`, and cost is within

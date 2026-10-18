@@ -41,7 +41,8 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 ## Environment
 
 - **n8n runs in Docker on the Raspberry Pi**, served over Tailscale at `https://raspberrypi.tailf7a7bf.ts.net`
-  (not acer-tm, which the `n8n-stack` notes mention). Postgres is reachable from n8n.
+  (not acer-tm, which the `n8n-stack` notes mention). Postgres is reachable from n8n. The Enquiry Desk's data is in the
+  **`enquiry`** database (staging: `enquiry_staging`); the `n8n` database is n8n's own (workflows, credentials, executions).
 - Models: **Amazon Nova 2 Lite on Bedrock** (`global.amazon.nova-2-lite-v1:0`, `ap-southeast-1`), paid from
   AWS credits only. URL, model and prices live in the `config` node.
 - n8n container needs `NODE_FUNCTION_ALLOW_BUILTIN=crypto`.

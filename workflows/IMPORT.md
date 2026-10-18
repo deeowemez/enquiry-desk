@@ -13,7 +13,8 @@ You don't need them to run the system.
 
 ## Before you import
 
-1. **Postgres.** Create the tables and views, then the fact table and its first version:
+1. **Postgres.** Use a database of its own (this project uses `enquiry`, and `enquiry_staging` for staging), not the one n8n
+   keeps its own data in. Create the tables and views, then the fact table and its first version:
    ```bash
    psql -h <host> -U <user> -d <db> -f ../schema/schema.sql
    psql -h <host> -U <user> -d <db> -f ../schema/facts.sql

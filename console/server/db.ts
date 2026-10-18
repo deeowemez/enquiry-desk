@@ -4,7 +4,7 @@ import pg from 'pg';
 export const pool = new pg.Pool({
   host: process.env.CONSOLE_DB_HOST ?? 'postgres',
   port: Number(process.env.CONSOLE_DB_PORT ?? 5432),
-  database: process.env.CONSOLE_DB_NAME ?? 'n8n',
+  database: process.env.CONSOLE_DB_NAME ?? 'enquiry',
   user: process.env.CONSOLE_DB_USER ?? 'console_ro',
   password: process.env.CONSOLE_DB_PASSWORD,
   max: 4,

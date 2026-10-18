@@ -58,7 +58,7 @@ browser ── Tailscale Serve (tailnet only, adds who you are) ── console c
 # 1. database side (once, on each database you want it to read)
 docker exec -i <postgres> psql -U <user> -d <db> -f - < schema/console_views.sql
 docker exec -i <postgres> psql -U <user> -d <db> -v pw="'<password>'" -f - < schema/console_role.sql
-# phase 2, in BOTH databases (production, then enquiry_staging)
+# phase 2, in BOTH databases (enquiry, then enquiry_staging)
 docker exec -i <postgres> psql -U <user> -d <db> < schema/facts.sql
 node console/scripts/seed-facts.mjs | docker exec -i <postgres> psql -U <user> -d <db>
 docker exec -i <postgres> psql -U <user> -d <db> -v facts_pw="'..'" -v staging_pw="'..'" -v recheck_pw="'..'" -f - < schema/console_roles_phase2.sql

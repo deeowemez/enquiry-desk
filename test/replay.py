@@ -6,7 +6,7 @@ workflow's `record received` node reclaims the failed row (same id), so nothing 
 
     python3 test/replay.py \
         --webhook "$WEBHOOK_PROD_URL" \
-        --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"
+        --psql "docker exec -i n8n-stack-postgres-1 psql -U n8n -d enquiry"
 
     --dry-run        list what would be replayed, change nothing
     --only <uuid>    replay one enquiry (comma-separated for several)

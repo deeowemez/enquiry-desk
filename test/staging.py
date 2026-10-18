@@ -9,7 +9,8 @@ builder works on a staging copy, and a person promotes a change to production.
     python3 test/staging.py create-review # clone the live human-review workflow too (paths review-staging / review-act-staging)
     python3 test/staging.py sync --yes   # overwrite staging with the live workflows' current draft (discards
                                          # un-promoted staging work: `export` first)
-    python3 test/staging.py status    # show ids, active state and the staging webhook path
+    python3 test/staging.py status    # show ids, active state, the staging webhook path and which database staging uses
+    python3 test/staging.py use-db    # point the EXISTING staging workflows at the staging database credential (no sync needed)
     python3 test/staging.py export    # write the staging intake to workflows/01-intake.staging.json (chat id placeholdered)
     python3 test/staging.py export --live   # the LIVE intake -> workflows/01-intake.mine.json (read-only on n8n)
     python3 test/staging.py models    # which model each stage uses on staging
@@ -24,8 +25,10 @@ What differs from production (everything else is a straight copy):
   intake  : webhook path `enquiry-staging`; its error workflow is the staging errors copy;
             the Telegram `review alert` node is disabled.
   errors  : the Telegram alert node is removed (it still marks the row failed and logs it).
-So staging never pages anyone and never collides with a production webhook. Both write to the same
-Postgres; score.py traffic (test+...@example.com) is separated by `is_test` in the stats_* views.
+  all     : every Postgres node uses the `postgres_credential` in staging.json (database `enquiry_staging`), so staging
+            never reads or writes production rows. `promote` puts the LIVE credential back and refuses to ship the staging one.
+So staging never pages anyone, never collides with a production webhook and never touches production data.
+score.py traffic (test+...@example.com) is still flagged `is_test` (a generated column) in either database.
 
 Needs N8N_API_KEY in the environment (never written to a file). N8N_API_URL defaults to
 http://127.0.0.1:5678. Standard library only.
@@ -77,11 +80,25 @@ def load_state():
     return json.loads(STATE.read_text()) if STATE.exists() else {}
 
 
+def use_staging_db(nodes, cred):
+    """Point every Postgres node at the staging database credential. Returns how many nodes changed."""
+    n_changed = 0
+    for n in nodes:
+        c = (n.get("credentials") or {})
+        if "postgres" in c and c["postgres"].get("id") != cred["id"]:
+            c["postgres"] = {"id": cred["id"], "name": cred["name"]}
+            n_changed += 1
+    return n_changed
+
+
 def clean(w, name, settings):
     """A live workflow -> a body the create/update endpoints accept."""
     nodes = json.loads(json.dumps(w["nodes"]))
     for n in nodes:
         n.pop("webhookId", None)          # let n8n mint new webhook ids: two workflows can't share one
+    cred = load_state().get("postgres_credential")
+    if cred:
+        use_staging_db(nodes, cred)       # staging reads and writes its own database, never production's
     return {"name": name, "nodes": nodes, "connections": w["connections"],
             "settings": {k: v for k, v in settings.items() if k in SETTINGS_OK}}
 
@@ -276,11 +293,16 @@ def live_from_staging(stg, live, kind="intake"):
     sn = {n["name"] for n in stg["nodes"]}
     added, removed = sorted(sn - set(ln)), sorted(set(ln) - sn)
     nodes = json.loads(json.dumps(stg["nodes"]))
+    live_pg = next((n["credentials"]["postgres"] for n in live["nodes"] if "postgres" in (n.get("credentials") or {})), None)
     for n in nodes:
         l = ln.get(n["name"])
         if l is None:
+            if live_pg and "postgres" in (n.get("credentials") or {}):
+                n["credentials"]["postgres"] = live_pg    # a node new in staging must still use the LIVE database
             continue                                  # new in staging: keep as built
         n["id"] = l["id"]
+        if "postgres" in (l.get("credentials") or {}):
+            n.setdefault("credentials", {})["postgres"] = l["credentials"]["postgres"]    # live keeps the LIVE database
         for k in ("webhookId", "disabled"):
             if k in l:
                 n[k] = l[k]
@@ -345,6 +367,9 @@ def cmd_promote(args):
         sys.exit(f"Refusing: staging runs a non-default model on {', '.join(experimental)}. Promoting an experiment to production is how "
                  "classify ended up on Nova Micro. Put staging back (`sweep.py restore`, or `set-model all=2lite`), or, if this really "
                  "is the model set you want live, add --allow-models.")
+    stg_cred = st.get("postgres_credential")
+    if stg_cred and any((n.get("credentials") or {}).get("postgres", {}).get("id") == stg_cred["id"] for n in body["nodes"]):
+        sys.exit("Refusing: the promoted graph would point production at the STAGING database credential. This is a bug in promote; nothing was changed.")
     BACKUPS.mkdir(parents=True, exist_ok=True)
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
     backup = BACKUPS / (f"promote-review-{stamp}.json" if kind == "review" else f"promote-{stamp}.json")
@@ -373,6 +398,24 @@ def cmd_rollback(args):
     print(f"restored {latest.name} and published")
 
 
+def cmd_use_db(args):
+    """Switch the existing staging workflows to the staging database, in place (no sync: un-promoted work is kept)."""
+    st = load_state()
+    cred = st.get("postgres_credential")
+    if not cred:
+        sys.exit("No postgres_credential in staging.json. Create the `Postgres - staging` credential in n8n and add its id and name.")
+    refuse_during_sweep("use-db")
+    for k in ("errors", "intake", "review"):
+        if not st.get(k):
+            continue
+        w = api("GET", f"/workflows/{st[k]}")
+        n = use_staging_db(w["nodes"], cred)
+        if n:
+            put(st[k], w)
+            publish(st[k])
+        print(f"{k:7} {n} Postgres node(s) switched to '{cred['name']}'")
+
+
 def cmd_status(args):
     st = load_state()
     if not st:
@@ -383,12 +426,14 @@ def cmd_status(args):
             continue
         w = api("GET", f"/workflows/{st[k]}")
         print(f"{k:7} {st[k]}  active={w.get('active')}  nodes={len(w['nodes'])}  updated={w.get('updatedAt')}")
+    cred = st.get("postgres_credential")
     print(f"webhook path: /webhook/{st['webhook_path']}")
+    print(f"database    : {cred['name'] if cred else 'SHARED with production (no postgres_credential in staging.json)'}")
 
 
 if __name__ == "__main__":
     cmds = {"create": cmd_create, "create-review": cmd_create_review, "sync": cmd_sync, "status": cmd_status, "export": cmd_export, "models": cmd_models,
-            "set-model": cmd_set_model, "promote": cmd_promote, "rollback": cmd_rollback}
+            "set-model": cmd_set_model, "use-db": cmd_use_db, "promote": cmd_promote, "rollback": cmd_rollback}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         sys.exit(__doc__)
     cmds[sys.argv[1]](sys.argv[2:])

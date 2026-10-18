@@ -123,5 +123,17 @@ python3 test/staging.py promote         # read-only plan; add --yes to apply (ba
 python3 test/staging.py rollback --yes  # undo the last promotion
 ```
 
-`promote review` and `rollback review` do the same for the review workflow. Live webhook paths, ids, Telegram state
-and the review link are preserved on promotion.
+`promote review` and `rollback review` do the same for the review workflow. Live webhook paths, ids, Telegram state,
+the review link and the live database credential are preserved on promotion.
+
+**Give staging its own database** (recommended, so staging runs never touch production rows):
+
+```bash
+docker exec -i <postgres> psql -U <user> -d postgres -c "create database enquiry_staging owner <user>;"
+docker exec -i <postgres> psql -U <user> -d enquiry_staging < schema/schema.sql
+```
+
+Then create a second Postgres credential in n8n, `Postgres - staging` (same host and user, database `enquiry_staging`), add
+its id and name to `test/staging.json` as `"postgres_credential": {"id": "…", "name": "Postgres - staging"}`, and run
+`python3 test/staging.py use-db`. Point `score.py --psql` at that database when you score staging. Apply every later schema
+change to both databases.

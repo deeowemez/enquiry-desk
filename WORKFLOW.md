@@ -177,10 +177,13 @@ Replies `400 {"ok": false, "error": "A valid email address is required…"}`. No
 insert into enquiry (...) values ($1::uuid, $2, ..., 'received', $8)
 on conflict (external_key) do update set status = 'received', ...
   where enquiry.status = 'failed'      -- only a FAILED row can be taken over (a replay)
-returning id;
+returning id, is_test;
 ```
 
-- **New enquiry:** the row is inserted, and the node returns its `id`.
+- **New enquiry:** the row is inserted, and the node returns its `id` and `is_test`. `is_test` is a **generated column**
+  (`from_email ~* '^test\+[^@]*@example\.com$'`), the one definition of scoring traffic: `envelope` carries it on, and
+  `notify a human?` and `draft for cleared?` read it. It requires `@example.com`, a domain that cannot receive mail, so a
+  real customer can't trigger it.
 - **Duplicate:** the key already exists and the row isn't `failed`, so nothing changes and 0 rows are
   returned.
 - **Replay of a failed enquiry:** the old `failed` row is taken over and keeps its original `id`.
@@ -463,7 +466,7 @@ Sets `review_status = 'pending'` and creates a random `review_token`. The token 
 review link (§8).
 
 #### `notify a human?` (IF)
-Skips Telegram for test traffic, meaning emails starting with `test+`, which `score.py` uses. The tests
+Skips Telegram for test traffic (`is_test`, read back from the database: `test+…@example.com`, which `score.py` uses). The tests
 still create reviews, but they don't send anyone a message.
 
 #### `review alert` (Telegram)
@@ -477,7 +480,7 @@ private Tailscale network.
 
 #### `draft for cleared?` (IF)
 Lets a reply through only if the action is `auto_send` or `clarify`, the reply has text, it is not blocked, and
-the sender is **not** `test+…` scoring traffic. The last rule keeps scoring runs from filling the mailbox with
+the sender is **not** scoring traffic (`is_test`). The last rule keeps scoring runs from filling the mailbox with
 drafts (it is the same idea as `notify a human?`). Blocked and escalated replies never come this way: they go to a
 person through `open review`.
 
@@ -575,17 +578,23 @@ is a straight copy of production.
 | Review webhook paths | `review`, `review-act` | `review-staging`, `review-act-staging` |
 | Review page's form action and back link | `review-act`, `review?id=` | `review-act-staging`, `review-staging?id=` |
 | Name | `01 Enquiry Desk - …` | same, with ` (STAGING)` |
+| **Database** | `n8n` (credential `Postgres account`) | **`enquiry_staging`** (credential `Postgres - staging`), same schema |
 
 **What is shared, and why it matters:**
 
-- **One Postgres.** Staging and production write to the same tables. Test traffic uses addresses like
-  `test+…@example.com`, which the `stats_*` views flag as `is_test`, so dashboards can filter it.
+- **Not the database.** Staging has its **own database**, `enquiry_staging`, on the same Postgres server, with the same
+  tables. Staging runs, scoring and re-checks never touch production rows, and the dashboard (which reads production) never
+  sees them. `staging.py` points every Postgres node of the staging workflows at the `Postgres - staging` credential, and
+  `promote` puts production's credential back, so a promotion can never aim production at staging. **A schema change has to
+  be applied to both databases, staging first.** Scoring traffic (`test+…@example.com`) is flagged by the generated column
+  `enquiry.is_test` in either database.
 - **The same credentials.** Staging calls Bedrock with the same key, so staging runs cost real (credit) money,
   about $0.0023 per enquiry.
 - **⚠ The same Gmail credential.** **Approving a reply on the staging review page creates a real Gmail draft** in the
   business mailbox. Only drafts are ever created and nothing is sent, but use synthetic enquiries and delete the
   test drafts.
-- **Pending reviews pile up.** A full scoring run leaves about 11 `pending` reviews. Filter `is_test`, or close them.
+- **Pending reviews pile up** in whichever database you score. A full run leaves about 11 `pending` reviews; on production,
+  filter `is_test` or close them. Staging's pile is separate and harmless.
 
 ### 9.3 How a change gets to production
 

@@ -155,7 +155,9 @@ def main():
 
     for i, case in enumerate(cases):
         exp = case["expect"]
-        email = f"test+{run}-{case['id']}@example.com"   # unique per run: no dedupe collisions
+        # unique per run (no dedupe collisions). Must match enquiry.is_test in schema/schema.sql, the one definition
+        # of scoring traffic: the intake sends no Telegram alert and makes no Gmail draft for it.
+        email = f"test+{run}-{case['id']}@example.com"
         status = post(args.webhook, {"email": email, "subject": "", "message": case["body"]})
 
         got = wait_for(args.psql, email, args.timeout) if status < 400 else None

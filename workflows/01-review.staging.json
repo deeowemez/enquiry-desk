@@ -44,8 +44,8 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "k9GMxaMtEYrelvvU",
-          "name": "Postgres account"
+          "id": "78SZJwMBT6FMCUPm",
+          "name": "Postgres - staging"
         }
       },
       "notesInFlow": true,
@@ -148,8 +148,8 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "k9GMxaMtEYrelvvU",
-          "name": "Postgres account"
+          "id": "78SZJwMBT6FMCUPm",
+          "name": "Postgres - staging"
         }
       },
       "notesInFlow": true,
@@ -301,8 +301,8 @@
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "k9GMxaMtEYrelvvU",
-          "name": "Postgres account"
+          "id": "78SZJwMBT6FMCUPm",
+          "name": "Postgres - staging"
         }
       },
       "parameters": {

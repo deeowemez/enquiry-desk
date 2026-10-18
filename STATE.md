@@ -47,7 +47,7 @@ works; cloud routines can't reach the tailnet-only n8n). What exists:
   webhook `/webhook/enquiry-staging`, errors copy has no Telegram, the intake `review alert` node is disabled.
   Why: `score.py` tests the *published* version through a production-mode webhook, so an unattended builder that
   edits the live workflow could only test by publishing it. It works on staging; **a person promotes to live.**
-  `sync` re-copies live → staging after a promotion. Staging shares Postgres; test traffic is `test+…` (`is_test`).
+  `sync` re-copies live → staging after a promotion. Staging has its **own database** `enquiry_staging` (decision 20); scoring traffic is `test+…@example.com`, the generated column `enquiry.is_test` (decision 19).
 - **`score.py --label`** names a run (model set / prompt) in the results file.
 - **`test/compare.py`** prints a table of runs, and `--check RUN` gates a run against `test/baseline.json`:
   safety flags all pass · 0 invented claims · 0 failed · category and actions within **±1** of baseline · cost
@@ -221,6 +221,31 @@ Record in segments, about 4–5 minutes.
     **Promoted 2026-10-18** (backup `promote-20261018-060831.json`; the plan also carried cosmetic sticky-note size/position edits and a `version` field on `route`'s conditions, which I checked left the routing identical). **Verified live**: a cleared and a clarify enquiry from non-test addresses got drafts, a `test+` one did not, `sent_at` empty; promote plan now empty. `WORKFLOW.md`, `IMPORT.md` and the README updated.
     Open: nothing tells staff a new draft exists (no Telegram message for them); they find it in Gmail Drafts.
 
+19. **Scoring traffic (`is_test`) is defined once, in the database** (2026-10-18, **live**).
+    It used to be the string `test+` written in four places (two intake nodes, the `stats_enquiry` view, `score.py`), so a change in one
+    would silently break the others, and a real sender whose address began `test+` would get no alert and no draft. Now `enquiry.is_test` is a
+    **generated column**: `from_email ~* '^test\+[^@]*@example\.com$'` (it also requires `@example.com`, a domain that cannot receive mail, so a
+    customer can't trigger it). `record received` returns it (`returning id, is_test`), `envelope` and `prepare row` carry it, and
+    `notify a human?` and `draft for cleared?` read `is_test` instead of `startsWith('test+')`. `stats_enquiry` reads the column (counts
+    unchanged: 14 real, 755 test). The column does not touch the live workflow (it neither writes nor reads it), so the schema change was safe
+    ahead of the promotion. Tested on staging: `test+…@example.com` flagged and no draft; `parent+…` drafted; `test+…@gmail.com` **not** treated as
+    test (drafted); a duplicate still refused (200). Full staging run `20261018-142648` passes every gate, 0 drafts from 40 scoring replies.
+    **Promoted 2026-10-18** (5 nodes: `record received`, `envelope`, `prepare row`, `notify a human?`, `draft for cleared?`; backup `promote-20261018-071303.json`).
+    Verified live: `test+…@example.com` flagged and no draft, `parent+…` drafted, `test+…@gmail.com` not a test (drafted), duplicate refused, `sent_at` empty,
+    live Postgres nodes still on the live credential, nothing in `enquiry_staging`. `WORKFLOW.md` updated. Existing databases need the `alter table` in `schema/schema.sql`.
+
+20. **Staging has its own database** (2026-10-18, **live**; no production workflow change). Staging used to write to the same tables as production,
+    so staging runs polluted the real stats (the "14 real" enquiries were mostly staging tests), staging reviews sat in the live queue, a schema
+    change hit production before it was promoted, and the shared duplicate key could collide across environments. Now `enquiry_staging` (same Postgres
+    server, `schema/schema.sql` applied; columns, views and indexes verified identical to production) holds staging data, and the staging workflows use a
+    second n8n credential, `Postgres - staging` (id in `test/staging.json`, no secret stored). `staging.py` swaps the credential when it builds staging
+    (`create`, `sync`), has `use-db` to switch the existing staging workflows in place, and `promote` **puts production's credential back** on every node
+    (including nodes new in staging) and refuses if the promoted graph would still use the staging one; checked: 0 of 9 promoted Postgres nodes use it, and
+    the promote plan is unchanged (the 5 `is_test` nodes). `sweep.py` defaults to the staging database. Verified: a staging post and an escalation landed in
+    `enquiry_staging` and not in production; the staging review page read the staging row and the same link is "Not found" on the live page; full staging run
+    `20261018-150335` passes every gate with all 24 enquiries in `enquiry_staging`. **Pass `--psql ... -d enquiry_staging` to `score.py` and `replay.py` for
+    staging.** Every schema change must now be applied to both databases, staging first. Not exercised: the staging errors workflow (a real staging failure).
+
 ## Model strategy (decided 2026-10-14)
 
 - **Nova models only** while the credit is the budget (rule: credits only). Claude is out until a client pays.
@@ -339,6 +364,9 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261017-085650` | 22/24 | 6/6 | 6/6 | 22/24 | 0/12 | $0.00238 | `clarify` = Nova Micro, **one run**: passes. Interrupted sweep: staging was restored 5 s before the end, but `clarify` only touches t02 and t21, which run early, so the result stands. Not a recommendation: `clarify` is not where accuracy is decided |
 | `20261017-234006` / `-234407` | 22/24 | 6/6 | 6/6 | 20/24, 22/24 | 0 | $0.00236 / $0.00270 | `draft` = Nova Pro, rest Nova 2 Lite: passes the gate but **no gain** over the baseline (21/24): same t06/t07 misses every run; run 1 added t03 (`claim check returned no result`) and t11 auto-sent a confused non-answer. Pro's `draft` stage costs about 2.1× Lite's ($0.0015 vs $0.0007). Verdict: keep Nova 2 Lite |
 | `20261018-135950` | 22/24 | 6/6 | 6/6 | 23/24 | 0 | $0.00233 | staging + Gmail drafts for cleared/clarify (decision 18): passes every gate; `test+` traffic creates no drafts |
+| `20261018-144119` | 22/24 | 6/6 | 6/6 | 22/24 | 0 | $0.00236 | **live** after decision 18 was promoted: passes every gate; `test+` traffic made 0 drafts. (Re-run: the first live run, `20261018-141654`, passed identically but its result file was lost.) |
+| `20261018-150335` | 22/24 | 6/6 | 6/6 | 21/24 | 0 | $0.00240 | staging on its **own database** (decision 20): passes every gate; 24 rows in `enquiry_staging`, 0 in production |
+| `20261018-142648` | 22/24 | 6/6 | 6/6 | 22/24 | 0 | $0.00237 | staging with `is_test` read from the database (decision 19): passes every gate; 0 drafts from scoring traffic |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)

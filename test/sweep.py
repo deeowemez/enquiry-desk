@@ -52,7 +52,7 @@ BASE = ALIASES["2lite"]
 STAGES = staging.STAGES
 DIR = staging.BACKUPS
 LOCK = staging.SWEEP_LOCK
-PSQL = "docker exec -i n8n-stack-postgres-1 psql -U n8n -d n8n"
+PSQL = "docker exec -i n8n-stack-postgres-1 psql -U n8n -d enquiry_staging"   # sweeps only ever run on staging, which has its own database
 SECONDS_PER_CASE = 16          # measured: about 6.5 minutes for 24 cases at --delay 6
 
 

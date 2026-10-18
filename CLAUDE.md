@@ -29,7 +29,7 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `test/results/` | One JSONL per scoring run — compare before/after a change |
 | `test/compare.py`, `test/baseline.json` | Table of runs; `--check RUN` gates a run against the baseline (safety, invented claims, failures, accuracy, cost) |
 | `test/sweep.py` | Runs model-comparison experiments on staging with a lock, `stop`, `status`, `report` and a guaranteed restore. **Use it for any multi-run experiment; don't hand-roll background jobs** |
-| `test/staging.py`, `test/staging.json` | Builds/refreshes the **staging copies** of intake + errors (`/webhook/enquiry-staging`, no Telegram) and the human-review workflow (`/webhook/review-staging`); `promote [review]` / `rollback [review]`. Test changes there; only a person promotes to the live workflow |
+| `test/staging.py`, `test/staging.json` | Builds/refreshes the **staging copies** of intake + errors (`/webhook/enquiry-staging`, no Telegram) and the human-review workflow (`/webhook/review-staging`); `promote [review]` / `rollback [review]`. Staging has its **own database** (`enquiry_staging`, credential `Postgres - staging`; `use-db`): pass it to `score.py --psql`. Test changes there; only a person promotes to the live workflow (promote keeps production's credential) |
 | `test/replay.py` | Re-posts failed enquiries from the `dead_letter` view. `--dry-run` first |
 | `workflows/01-intake.mine.json` | **The live intake workflow** (export after every change; `staging.py export --live`) |
 | `workflows/01-intake.staging.json` | Export of the **staging** intake (`test/staging.py export`). Matches live unless a change is waiting to be promoted |

@@ -16,6 +16,10 @@ create table enquiry (
   action        text        check (action in ('auto_send','clarify','escalate','blocked')),
   status        text        not null default 'received',  -- received -> processed | failed
   n8n_execution_id text,                                 -- links a row to its run; the error workflow finds it by this
+  -- THE definition of scoring traffic (score.py sends test+<run>-<case>@example.com). Generated, so nothing can drift:
+  -- the intake reads it back from `record received`, the stats_* views read it. Existing database:
+  --   alter table enquiry add column is_test boolean generated always as (from_email ~* '^test\+[^@]*@example\.com$') stored;
+  is_test       boolean generated always as (from_email ~* '^test\+[^@]*@example\.com$') stored,
   created_at    timestamptz not null default now()
 );
 
@@ -86,7 +90,7 @@ create index if not exists enquiry_review_pending_idx on enquiry (received_at) w
 -- read the same answer. No view exposes from_email, subject or body: a dashboard user can be granted
 -- these views only, and can't leak customer data even by mistake.
 --   day      = calendar day in Hong Kong time (the customers' day, UTC+8)
---   is_test  = score.py traffic (test+…@example.com); filter it in or out per panel
+--   is_test  = score.py traffic, the generated column enquiry.is_test (test+…@example.com); filter it in or out per panel
 --   legacy   = status 'new' rows from before write-first intake (session 1–2); kept, but not "processed"
 
 -- One row per enquiry, with its cost. The base the other views build on.
@@ -100,7 +104,7 @@ select e.id,
        e.language,
        jsonb_array_length(e.safety_flags - 'none') > 0            as has_safety_flag,
        e.review_status,
-       e.from_email like 'test+%'                                  as is_test,
+       e.is_test                                                   as is_test,
        coalesce(c.cost_usd, 0)                                     as cost_usd,
        coalesce(c.model_calls, 0)                                  as model_calls
 from enquiry e

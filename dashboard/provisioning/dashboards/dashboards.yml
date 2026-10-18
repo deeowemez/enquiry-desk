@@ -1,7 +1,0 @@
-apiVersion: 1
-providers:
-  - name: enquiry-desk
-    type: file
-    allowUiUpdates: false
-    options:
-      path: /var/lib/grafana/dashboards

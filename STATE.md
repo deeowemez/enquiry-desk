@@ -1,6 +1,6 @@
 # Enquiry Desk — state
 
-**Last updated:** 2026-10-17. This file is the **technical record**: results, decisions and their reasons, node map,
+**Last updated:** 2026-10-18. This file is the **technical record**: results, decisions and their reasons, node map,
 lessons learned, how to run things. Current status and next steps live in the project notes (loaded at session start).
 
 ## Status
@@ -10,20 +10,22 @@ customers are in UTC+8. It classifies each enquiry, answers only from a fact tab
 storing a reply, routes risky cases to a person on their phone, and never loses an enquiry. Runs on **Amazon
 Nova 2 Lite (Bedrock)**, paid from the AWS Free Tier credit ($99, expires 2027-03-09; **rule: credits only**).
 
-Latest full run on the **live** workflow, `20261017-113732` (and two staging runs that match it), 24 hand-labelled cases:
+Latest full run on the **live** workflow, `20261018-164314` (facts read from the database), 24 hand-labelled cases:
 
 | Category | Safety flags | Missing slots | **Actions** | Invented claims in sendable replies | Failed runs | Cost / enquiry |
 |---|---|---|---|---|---|---|
-| 22/24 | **6/6** | 6/6 | **21/24** (both runs) | **0** | 0 | **~$0.0023** (corrected prices) |
+| 22/24 | **6/6** | 6/6 | **23/24** | **0** | 0 | **~$0.0024** |
+
+Recent live and staging runs range 20–23/24 on actions (the usual ±1–2 spread); safety flags and invented claims have not moved.
 
 **Cost note:** runs before 2026-10-17 used the wrong per-token price and under-stated cost by ~36% (they show ~$0.0018
 for what is really ~$0.0025). Compare cost only between runs made after the correction. The earlier live run
 `20261011-030241` scored 22/24 · 6/6 · 23/24; 23/24 vs 21/24 sits at the edge of the usual ±1–2/24 spread (the prompts did not
 change, only the layout and the per-stage config).
 
-The one action "miss" is t06 → `blocked`: the draft calculated a £190 bundle price and the validator stopped
-it (label says `escalate`; both reach a human). **Nothing is emailed to customers** — approved replies get
-`approved_at`; `sent_at` stays empty until a real outbound channel exists.
+The usual action "miss" is t06 → `blocked`: the draft calculated a £190 bundle price and the validator stopped
+it (label says `escalate`; both reach a human). **Nothing is sent to customers automatically**: every reply that is ready
+becomes a Gmail *draft* (cleared and clarify replies at once, escalated ones once a person approves), and `sent_at` stays empty.
 
 **What it does, in one line each**
 - **Never loses an enquiry:** saved to Postgres before any model call; 202 + reference id in ~0.4 s.
@@ -36,7 +38,12 @@ it (label says `escalate`; both reach a human). **Nothing is emailed to customer
   tailnet review page → **Approve draft / Take over**.
 - **Fails loudly:** any production failure → row `failed` (dead letter) → `run_log` → Telegram alert →
   `replay.py` re-runs it with one command. Proven by a chaos test.
-- **Measured:** `score.py` re-runs the 24 cases after every change; every run is in `test/results/`.
+- **Measured:** `score.py` re-runs the 24 cases after every change; every run is in `test/results/`, and `compare.py --check`
+  gates a run against the baseline.
+- **Changed safely:** changes are built on a **staging** copy with its **own database** and promoted by a person (backup and
+  rollback). The **fact table is versioned in the database** (`fact_set`) and changes only through the **staff console**
+  (`console/`, tailnet port 8444): draft → staging → 24-case test → publish, refused unless that exact version passed the gate.
+- **Staff console:** queue, enquiry detail (no customer text), blocked reasons, cost, health, facts, read-only prompts, re-checks.
 
 ## Staging, run comparison and the gate (2026-10-17)
 
@@ -132,20 +139,22 @@ outcomes · green = Postgres · red = errors workflow. Simplified: the exact nod
 
 ## Loom outline
 
-Record in segments, about 4–5 minutes.
+Record in segments, about 5–6 minutes. (Updated 2026-10-18 for Gmail drafts, the console and facts in the database; a fuller cheat
+sheet with paste-ready enquiries, the chaos commands and likely questions is in the project notes.) Post demo enquiries from
+non-`test+` addresses so the Telegram alert and the Gmail draft appear on camera.
 
 | # | Show | Say |
 |---|---|---|
-| 1 | The main sticky / problem | "UK-staffed tutoring company, customers in UTC+8: the whole Asian day is unstaffed." |
-| 2 | POST t01 → **202 + id** in 0.4 s → row `processed`, reply stored | "Saved first, answered only from a fact table, ~0.2¢ per enquiry." |
-| 3 | t18 (child wellbeing, confidence 0.95) → **escalate**, no AI draft | "Safety flags beat confidence. A person writes this one." |
-| 4 | t06 → draft computes **£190** → **blocked** by the validator | "The model invented a bundle price. Code caught it." |
-| 5 | t08 (historical run) → verifier blocks "GCSE Maths on Saturdays" | "A second model checks every sentence against the facts — it caught a real mistake." |
-| 6 | t24 injection → flagged `prompt_injection` → escalate | "The enquiry is data, never instructions." |
-| 7 | Chaos: break the model URL → POST → **Telegram alert** → `dead_letter` → restore → `replay.py` → processed | "Failures can't vanish: marked, logged, announced, replayed with one command." |
-| 8 | Escalated enquiry → Telegram "needs review" → tap **Open review** → **Approve draft** | "A person approves on their phone. No customer data in Telegram; the page is private to the tailnet." |
-| 9 | `score.py` summary | "24 labelled cases: 23/24 actions, 6/6 safety flags, 0 invented claims. Re-run on every change." |
-| 10 | Honest limits | "Synthetic data, 24 cases, the verifier is itself a model, and nothing is emailed yet — a real inbox is next." |
+| 1 | README top / canvas sticky | "UK-staffed tutoring company, customers in UTC+8: the whole Asian day is unstaffed. The company is fictional." |
+| 2 | The four stage frames on the canvas | "Saved first, understood, answered only from facts, checked, recorded. Models read; code decides." |
+| 3 | t01-style enquiry → **202** → console drawer timeline → Gmail Drafts | "Answered in seconds, every claim checked, and it's a draft: a person presses Send." |
+| 4 | t18 (child wellbeing) → Telegram "needs review" → review page | "No AI reply at all. Safety flags beat confidence. No customer text in Telegram." |
+| 5 | t06 → **Blocked** (invented £190) → console *Blocked & why* | "The model invented a bundle price. Code caught it." |
+| 6 | t24 → `prompt_injection` → to a person | "The enquiry is data, never instructions." |
+| 7 | Chaos: archive the live fact set → post → Telegram failure alert, dead letter 1 → restore → `replay.py` | "Failures can't vanish: saved, marked, announced, replayed with one command." |
+| 8 | Console *Facts*: the four steps, open the editor (don't publish) | "The business edits its own facts, but a change can't go live until it passes 24 test cases." |
+| 9 | The gate output | "22/24 category, 6/6 safety flags, 23/24 actions, 0 invented claims, about a quarter of a cent each." |
+| 10 | README limits | "Synthetic data, 24 cases, the checker is itself a model, no real inbox yet." |
 
 ## Decisions (agent-built on request, 2026-10-10/11)
 

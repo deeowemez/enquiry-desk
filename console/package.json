@@ -11,7 +11,9 @@
     "build": "npm run build:web && npm run build:server",
     "start": "node dist/server/server/index.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "test": "CONSOLE_DB_HOST=${CONSOLE_DB_HOST:-127.0.0.1} tsx --env-file=.env --test server/api.test.ts"
+    "test": "CONSOLE_DB_HOST=${CONSOLE_DB_HOST:-127.0.0.1} tsx --env-file=.env --test server/api.test.ts server/facts.test.ts && node scripts/extract-prompts.mjs --check",
+    "prompts": "node scripts/extract-prompts.mjs",
+    "test:unit": "tsx --test server/facts.test.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.6",

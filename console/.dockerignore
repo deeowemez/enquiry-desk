@@ -1,6 +1,0 @@
-node_modules
-dist
-web/dist
-.env
-mockups
-*.log

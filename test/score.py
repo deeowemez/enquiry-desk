@@ -105,9 +105,19 @@ def wait_for(psql, email, timeout):
     return None
 
 
-def allowed_numbers():
-    """Every number that appears anywhere in the fact table."""
-    text = (ROOT / "kb" / "facts.yaml").read_text()
+def allowed_numbers(psql):
+    """Every number that appears anywhere in the fact table the run is scored against: the live fact_set of the database
+    under test (so an edited price is not flagged as invented), or the seed kb/facts.json if that database has none."""
+    text = None
+    try:
+        out = subprocess.run(shlex.split(psql) + ["-At"], input="select doc::text from fact_set where status = 'live'",
+                             capture_output=True, text=True, timeout=30)
+        if out.returncode == 0 and out.stdout.strip():
+            text = out.stdout
+    except Exception:
+        pass
+    if text is None:
+        text = (ROOT / "kb" / "facts.json").read_text()
     return set(re.findall(r"\d+(?:\.\d+)?", text))
 
 
@@ -145,7 +155,7 @@ def main():
         sys.exit("No matching cases.")
 
     run = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    allowed = allowed_numbers()
+    allowed = allowed_numbers(args.psql)
     results = []
 
     print(f"Run {run} — {len(cases)} cases, {args.delay:.0f}s apart" +

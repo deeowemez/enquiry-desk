@@ -1,0 +1,15 @@
+# The console image is built from the repo root (it needs the scorer under test/). Everything is excluded except what it uses.
+*
+!console
+!test/score.py
+!test/compare.py
+!test/baseline.json
+!test/enquiries.jsonl
+!test/results
+!kb/facts.json
+console/node_modules
+console/dist
+console/web/dist
+console/.env
+console/mockups
+**/*.log

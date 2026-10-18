@@ -66,3 +66,42 @@ export interface Health {
   deadLetter: number; stuck: number; failures24h: number; lastProcessedAt: string | null;
   recentFailures: { ref: string; at: string; stage: string; cause: string; status: 'replayed' | 'open' }[];
 }
+
+// ---- phase 2: facts, prompts, test runs and re-checks
+
+export interface FactSetInfo {
+  version: number; status: 'draft' | 'live' | 'archived'; note: string | null; createdBy: string | null; createdAt: string;
+  basedOn: number | null; sourceVersion: number | null; gateRun: string | null; gatePassed: boolean | null; publishedAt: string | null; publishedBy: string | null;
+}
+export interface FactEntry { path: string; section: string; group: string; label: string; value: string | number | boolean; type: 'text' | 'number' | 'boolean'; topics: string[]; changed: 'added' | 'changed' | null; before?: string | number | boolean }
+export interface FactDiff { path: string; kind: 'added' | 'removed' | 'changed'; before?: unknown; after?: unknown }
+export interface FactsState {
+  production: FactSetInfo | null;
+  staging: FactSetInfo | null;
+  draft: FactSetInfo | null;
+  /** True once production enquiries record a facts_version, i.e. the live workflow reads the database. Until then, publishing changes nothing customers see. */
+  workflowReadsDatabase: boolean;
+  entries: FactEntry[];                 // the draft if there is one, otherwise the staging set
+  entriesFrom: 'draft' | 'staging';
+  diffVsStaging: FactDiff[];            // draft vs the staging live set
+  diffStagingVsProduction: FactDiff[];  // what publishing would change
+  canPublish: { ok: boolean; reason: string };
+  history: FactSetInfo[];               // production versions, newest first
+  topics: { id: string; name: string }[];
+}
+export type FactChange =
+  | { op: 'set'; path: string; value: string | number | boolean }
+  | { op: 'remove'; path: string }
+  | { op: 'addItem'; path: string; value: Record<string, unknown> | string }
+  | { op: 'removeItem'; path: string };
+
+export interface PromptStage { stage: string; label: string; purpose: string; node: string; model: string; text: string }
+export interface Prompts { source: string; stages: PromptStage[] }
+
+export type JobKind = 'gate' | 'impact';
+export interface Job {
+  id: string; kind: JobKind; status: 'running' | 'done' | 'failed' | 'cancelled'; startedAt: string; finishedAt: string | null; startedBy: string;
+  label: string; progress: { done: number; total: number }; factsVersion: number | null; message: string | null;
+  gate?: { run: string; passed: boolean; checks: { pass: boolean; name: string; detail: string }[] };
+  impact?: { before: Record<string, number>; after: Record<string, number>; changed: { ref: string; topic: string; before: string; after: string }[]; total: number };
+}

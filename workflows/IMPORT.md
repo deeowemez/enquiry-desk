@@ -13,8 +13,13 @@ You don't need them to run the system.
 
 ## Before you import
 
-1. **Postgres.** Create the tables and views:
-   `psql -h <host> -U <user> -d <db> -f ../schema/schema.sql`
+1. **Postgres.** Create the tables and views, then the fact table and its first version:
+   ```bash
+   psql -h <host> -U <user> -d <db> -f ../schema/schema.sql
+   psql -h <host> -U <user> -d <db> -f ../schema/facts.sql
+   node ../console/scripts/seed-facts.mjs | psql -h <host> -U <user> -d <db>    # version 1, from kb/facts.json
+   ```
+   Without a live fact set every enquiry fails at `facts` ("No live fact set"), loudly, through the errors workflow.
 2. **n8n environment.** The `normalise` node uses Node's `crypto`, which n8n blocks by default. Add this to the
    container's `environment:` and restart:
    ```yaml
@@ -76,7 +81,7 @@ dropdown.
 ### 3. `01-intake.mine.json`
 
 1. Attach `Bedrock - API key` to `classify`, `draft`, `verify` and `clarify`, `Postgres account` to `record received`,
-   `update enquiry`, `insert run_log`, `insert reply`, `open review` and `record draft`, `Gmail - drafts` to `create gmail draft`,
+   `load facts`, `update enquiry`, `insert run_log`, `insert reply`, `open review` and `record draft`, `Gmail - drafts` to `create gmail draft`,
    and `Telegram - alerts bot` to `review alert`. In `review alert`, replace the `{{ALERT_CHAT_ID}}` placeholder.
 2. **`config` node.** Set `review_base_url` to `https://<your-n8n>/webhook/review`. The same node holds the model
    for each stage and the price table used for cost figures. Change a stage's model there, and add its prices to
@@ -84,7 +89,8 @@ dropdown.
 3. **Error workflow.** Intake → **Settings** → **Error workflow** → `01 Enquiry Desk - errors` → Save.
 4. **Publish.** n8n 2.x has *Publish* instead of an Active toggle: saving changes only the draft, and the production
    webhook serves the **published** version.
-5. **`facts` node.** It is a hand copy of `../kb/facts.yaml`. They will drift, so change both.
+5. **Facts.** They are not in the workflow: `load facts` reads the live version from the `fact_set` table. Change them in the
+   staff console (`../console/README.md`), which tests a change on staging before it can be published.
 
 ## First run
 

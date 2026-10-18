@@ -86,7 +86,7 @@ flowchart TD
     V -- no --> R400[respond 400]
     V -- yes --> RR[(record received)] --> E[envelope] --> D{duplicate?}
     D -- yes --> RD[respond duplicate]
-    D -- no --> R202[respond 202] --> CFG[config] --> F[facts]
+    D -- no --> R202[respond 202] --> CFG[config] --> LF[(load facts)] --> F[facts]
   end
   subgraph S2["② Understand + route"]
     BCR[build classify request] --> CL[/classify/] --> PC[parse classification] --> DMS[derive missing slots] --> RT{route}
@@ -227,13 +227,34 @@ so a missing price fails loudly instead of logging $0). Every call reads it via 
 > **⚠ Gotcha:** *Include Other Input Fields* is on. Without it, a Set node outputs **only** the fields it
 > sets and the envelope disappears. The same applies to every `action = …` node later.
 
+#### `load facts` (Postgres)
+**The fact table lives in the database**, in `fact_set`: one row per version, and exactly one `live` row. This node reads it:
+
+```sql
+select version, doc from fact_set where status = 'live' order by version desc limit 1;
+```
+
+The staging workflow reads the staging database's live row, which is the candidate under test; production reads production's.
+New versions are made in the staff console (edit a draft, apply it to staging, run the 24-case test, publish), never by
+editing a node. **Always Output Data** is on, so that if there is no live row the next node still runs and fails loudly.
+
+> **⚠ Gotcha: a Postgres node that returns 0 rows emits no items**, so the nodes after it simply don't run, and the
+> execution ends "successfully" with the enquiry stuck at `received` and no alert. Always Output Data passes an empty item
+> instead, so `facts` can throw and the errors workflow takes over (the enquiry is already saved).
+
 #### `facts` (Code)
 **The fact table:** the only things a reply is ever allowed to say. It covers prices (£95 per subject per
 month, £25 drop-in, free trial), subjects and whether each is available (Physics A-Level is *not*),
 lesson slots in Hong Kong time, how to book (reply by email; no website or phone), deadlines (each marked
 `verified` or not), and policies. The discounts list is **deliberately empty**.
 
-It's a hand-copy of `kb/facts.yaml`. **If you change one, change both.**
+This node takes the document from `load facts` (throwing "No live fact set" if there isn't one) and passes the original
+items through, fetched back with `$('config').all()` because the Postgres node replaced them. It also remembers the version,
+`facts_version`, which `update enquiry` stores, so every enquiry records which facts answered it. Every later node reads the
+table with `$('facts').first().json.facts`, exactly as when the facts were written into this node by hand.
+
+> **⚠ Gotcha: the column is `json`, not `jsonb`.** jsonb re-sorts object keys. That moved `trial` ahead of the price in
+> what the model is shown, and a plain price question started being blocked. json keeps the order the facts were written in.
 
 Why a fact table rather than "search our documents" (RAG)? You can read it, it's cheap, and code can check
 a reply against it. A tutoring company survives a slow reply, but not a discount that doesn't exist.
@@ -442,8 +463,8 @@ cost of each model call plus `total_cost_usd`. Arrays are turned into JSON strin
 them as `jsonb`. It reads only `$input`, so it doesn't matter which branch the item came from.
 
 #### `update enquiry` (Postgres)
-The row already exists from `record received`. This fills in the classification and action and sets
-**`status = 'processed'`**. The scoring script waits for that status before it reads the result.
+The row already exists from `record received`. This fills in the classification, the action and `facts_version` (which
+fact table answered it), and sets **`status = 'processed'`**. The scoring script waits for that status before it reads the result.
 
 #### `insert run_log` (Postgres)
 One row per stage that ran: `classify` (always), `draft` or `clarify` (if a reply was written), `verify`
@@ -559,7 +580,7 @@ person**.
 
 | Workflow | Production | Staging |
 |---|---|---|
-| **intake** (50 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
+| **intake** (51 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
 | **errors** | `01 Enquiry Desk - errors`, id `BSmcb09mPBarqPjO` (the intake's *Error workflow* setting) | `… (STAGING)`, id `xPopuT81Duh5QlOx` (the staging intake's *Error workflow* setting) |
 | **review** (14 nodes) | `01 Enquiry Desk - review`, `GET /webhook/review` and `POST /webhook/review-act`, id `QQEDcUxU7OJIeNn3` | `… (STAGING)`, `GET /webhook/review-staging` and `POST /webhook/review-act-staging`, id `S7LZWf6J4zNQKSgm` |
 

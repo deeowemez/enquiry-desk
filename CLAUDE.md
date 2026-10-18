@@ -22,7 +22,7 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 
 | Path | What it is |
 |---|---|
-| `kb/facts.yaml` | Source of truth for facts. The `facts` Code node is a hand-copy — **change both** |
+| `kb/facts.json` | The first version of the fact table (seeds `fact_set`). **The live fact table is the `fact_set` table in each database** (decision 22): the workflow's `load facts` reads it, and it changes only through the console (draft → staging → 24-case test → publish). `kb/facts.yaml` is kept only for its comments; nothing reads it |
 | `schema/` | Envelope shape, classification JSON schema, Postgres tables |
 | `test/enquiries.jsonl` | 24 labelled cases. `t05`, `t11`, `t18`, `t24` are the ones that matter most |
 | `test/score.py` | Scorer: posts each case to a **production-mode** webhook (live or staging), reads back the row, reports accuracy. `--label` names the run. `--help` for usage |
@@ -35,7 +35,7 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `workflows/01-intake.staging.json` | Export of the **staging** intake (`test/staging.py export`). Matches live unless a change is waiting to be promoted |
 | `workflows/01-review.staging.json` | Export of the **staging** review workflow (the Gmail-draft step went live 2026-10-17) |
 | `workflows/01-errors.json`, `01-review.json` | Failure-path and human-review workflows. Chat ID is a `{{ALERT_CHAT_ID}}` placeholder (real value in `.env`) |
-| `console/` | The **staff console** (TypeScript: Fastify API + React/Vite web app, one Docker container, tailnet port 8444). Phase 1 is read-only; see `console/README.md`. `console/mockups/` holds the draft screens. DB side: `schema/console_views.sql` + `schema/console_role.sql` (apply to both databases) |
+| `console/` | The **staff console** (TypeScript: Fastify API + React/Vite web app, one Docker container, tailnet port 8444): the screens, plus facts editing, prompts (read-only) and re-checks; see `console/README.md`. `console/mockups/` holds the draft screens. DB side (apply to BOTH databases): `schema/console_views.sql`, `schema/console_role.sql`, `schema/facts.sql`, `schema/console_roles_phase2.sql` |
 | `workflows/IMPORT.md` | How to import the three workflows, with credentials, `config` and a first run |
 
 ## Environment

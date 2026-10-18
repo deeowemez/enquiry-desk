@@ -6,7 +6,7 @@ Three workflows make up the system. Import them in this order, because the first
 |---|---|---|
 | `01-errors.json` | `01 Enquiry Desk - errors` | Failure path: marks the row `failed`, logs it, sends a Telegram alert |
 | `01-review.json` | `01 Enquiry Desk - review` | The human review page, and the Gmail draft on approve |
-| `01-intake.mine.json` | `01 Enquiry Desk` (intake) | The pipeline: webhook → classify → route → draft or clarify → verify → record |
+| `01-intake.mine.json` | `01 Enquiry Desk` (intake) | The pipeline: webhook → classify → route → draft or clarify → verify → record → Gmail draft or review |
 
 `01-intake.staging.json` and `01-review.staging.json` are exports of the **staging copies** (see the last section).
 You don't need them to run the system.
@@ -29,7 +29,7 @@ You don't need them to run the system.
    | `Bedrock - API key` | Header Auth: name `Authorization`, value `Bearer <your Bedrock API key>` | `classify`, `draft`, `verify`, `clarify` |
    | `Postgres account` | Postgres. **If n8n runs in Docker the host is not `localhost`**: use the Postgres service name from your compose file or `host.docker.internal` | every Postgres node |
    | `Telegram - alerts bot` | Telegram API (bot token from @BotFather → `/newbot`; open the bot and press *Start*) | `telegram alert`, `review alert` |
-   | `Gmail - drafts` | Gmail OAuth2 API (below) | `create gmail draft` |
+   | `Gmail - drafts` | Gmail OAuth2 API (below) | `create gmail draft` (review **and** intake) |
 
    **Gmail OAuth2.** In Google Cloud, create a project, enable the **Gmail API**, configure the consent screen
    (External; add your mailbox as a test user, and publish the app so the refresh token does not expire after 7
@@ -76,8 +76,8 @@ dropdown.
 ### 3. `01-intake.mine.json`
 
 1. Attach `Bedrock - API key` to `classify`, `draft`, `verify` and `clarify`, `Postgres account` to `record received`,
-   `update enquiry`, `insert run_log`, `insert reply` and `open review`, and `Telegram - alerts bot` to
-   `review alert`. In `review alert`, replace the `{{ALERT_CHAT_ID}}` placeholder.
+   `update enquiry`, `insert run_log`, `insert reply`, `open review` and `record draft`, `Gmail - drafts` to `create gmail draft`,
+   and `Telegram - alerts bot` to `review alert`. In `review alert`, replace the `{{ALERT_CHAT_ID}}` placeholder.
 2. **`config` node.** Set `review_base_url` to `https://<your-n8n>/webhook/review`. The same node holds the model
    for each stage and the price table used for cost figures. Change a stage's model there, and add its prices to
    `model_prices`.

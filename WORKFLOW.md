@@ -19,8 +19,7 @@ customer's enquiry and works out what kind of enquiry it is. It then does one of
 - **clarify:** it asks the customer one question to fill in a missing detail.
 - **escalate:** it hands the enquiry to a person.
 
-Every enquiry is stored in Postgres along with what it cost. **Nothing is ever sent to the customer automatically.** An approved reply becomes a Gmail *draft* that a person reads and sends.
-Replies are stored for a person to approve.
+Every enquiry is stored in Postgres along with what it cost. **Nothing is ever sent to the customer automatically.** Every reply that is ready for a customer becomes a Gmail *draft* that a person reads and sends: cleared and clarify replies straight away, escalated and blocked ones once a person approves them.
 
 The idea running through the whole design is **models extract, code decides.** The AI model reads text and
 reports what it found. Plain code makes every decision that matters, such as where the enquiry goes,
@@ -103,6 +102,7 @@ flowchart TD
   subgraph S4["④ Record"]
     PR[prepare row] --> UE[(update enquiry)] --> RL[(insert run_log)] --> IR[(insert reply)] --> NR{needs review?}
     NR -- yes --> OR[(open review)] --> NH{notify a human?} -- yes --> TG[review alert]
+    NR -- no --> DC{draft for cleared?} -- yes --> CG[create gmail draft] --> RD[(record draft)]
   end
   F --> BCR
   RT -- "① flag ② sensitive" --> AE
@@ -453,10 +453,10 @@ cost. This is where the cost-per-enquiry figure comes from, about $0.0023 measur
 
 #### `insert reply` (Postgres)
 Stores the reply text, `grounded_on`, `blocked` and `block_reason`, and only if there *is* a reply (the
-escalate branch has none). `sent_at` stays empty: **this workflow never sends.** The review workflow may later create a Gmail draft (section 8).
+escalate branch has none). `sent_at` stays empty: **this workflow never sends.** It creates a Gmail draft for cleared and clarify replies (below); the review workflow creates one for approved escalations (section 8).
 
 #### `needs review?` (IF)
-`action` is `escalate` or `blocked` → a person must look. `auto_send` and `clarify` replies stop here.
+`action` is `escalate` or `blocked` → a person must look (`open review`). Anything else, meaning `auto_send` and `clarify`, goes to `draft for cleared?`.
 
 #### `open review` (Postgres)
 Sets `review_status = 'pending'` and creates a random `review_token`. The token is the secret part of the
@@ -474,6 +474,23 @@ private Tailscale network.
 > **⚠ Gotcha:** Telegram's default formatting (Markdown) breaks on underscores, and `auto_send` has one.
 > This node sets `parse_mode: HTML` and turns attribution off. In the exported file the chat ID is a
 > placeholder, `{{ALERT_CHAT_ID}}`, and the real value lives in `.env`. Replace it after importing.
+
+#### `draft for cleared?` (IF)
+Lets a reply through only if the action is `auto_send` or `clarify`, the reply has text, it is not blocked, and
+the sender is **not** `test+…` scoring traffic. The last rule keeps scoring runs from filling the mailbox with
+drafts (it is the same idea as `notify a human?`). Blocked and escalated replies never come this way: they go to a
+person through `open review`.
+
+#### `create gmail draft` (Gmail)
+Writes `Re: <subject>` addressed to the customer into the mailbox's **Drafts** folder, with the reply (or the one
+clarifying question) as the body. It is a **draft only**: there is no send node anywhere, and a person presses Send.
+`onError` is *continue*, so a Gmail failure cannot fail the enquiry, which is already recorded.
+
+#### `record draft` (Postgres)
+Stores `drafted_at` and `gmail_draft_id` on the `reply` row, or `draft_error` if Gmail failed. `sent_at` stays empty.
+Like every node in this stage it reads the row from `prepare row`, not from `$json`.
+
+> The same three nodes exist in the review workflow (§8), where they run on **approve** instead.
 
 ---
 
@@ -539,7 +556,7 @@ person**.
 
 | Workflow | Production | Staging |
 |---|---|---|
-| **intake** (47 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
+| **intake** (50 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
 | **errors** | `01 Enquiry Desk - errors`, id `BSmcb09mPBarqPjO` (the intake's *Error workflow* setting) | `… (STAGING)`, id `xPopuT81Duh5QlOx` (the staging intake's *Error workflow* setting) |
 | **review** (14 nodes) | `01 Enquiry Desk - review`, `GET /webhook/review` and `POST /webhook/review-act`, id `QQEDcUxU7OJIeNn3` | `… (STAGING)`, `GET /webhook/review-staging` and `POST /webhook/review-act-staging`, id `S7LZWf6J4zNQKSgm` |
 

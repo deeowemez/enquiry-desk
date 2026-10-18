@@ -211,6 +211,16 @@ Record in segments, about 4–5 minutes.
     **Live since 2026-10-17** (credential `Gmail - drafts`, promoted with `promote review --yes`): the success path was verified on staging and
     live: approving a synthetic enquiry created a draft, set `gmail_draft_id` and `drafted_at`, left `sent_at` empty.
 
+18. **Cleared (`auto_send`) and `clarify` replies also get a Gmail DRAFT** (2026-10-18, **live**). Until now these
+    stopped at `record` with no draft, no review and no send, so nothing delivered them. The staging intake now has a branch off the
+    unused "no review needed" output of `needs review?`: `draft for cleared?` (action `auto_send` or `clarify`, has text, not blocked,
+    and **not `test+…` scoring traffic**, so test runs do not fill the mailbox) → `create gmail draft` → `record draft` (same node and
+    columns as decision 17; a Gmail failure only sets `draft_error`). `sent_at` stays empty: a person still presses Send. Tested on
+    staging: cleared and clarify enquiries from a non-test address got drafts; a `test+` one and an escalation did not (escalations go through
+    review as before). A full staging run passes the gate: 22/24, flags 6/6, actions 23/24, 0 invented, $0.002327, no drafts from scoring.
+    **Promoted 2026-10-18** (backup `promote-20261018-060831.json`; the plan also carried cosmetic sticky-note size/position edits and a `version` field on `route`'s conditions, which I checked left the routing identical). **Verified live**: a cleared and a clarify enquiry from non-test addresses got drafts, a `test+` one did not, `sent_at` empty; promote plan now empty. `WORKFLOW.md`, `IMPORT.md` and the README updated.
+    Open: nothing tells staff a new draft exists (no Telegram message for them); they find it in Gmail Drafts.
+
 ## Model strategy (decided 2026-10-14)
 
 - **Nova models only** while the credit is the budget (rule: credits only). Claude is out until a client pays.
@@ -268,7 +278,7 @@ cost a lot. The `apac.` rows are the in-region price; confirm on first use that 
 
 ## Node map
 
-**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 47 nodes incl. stickies)
+**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 50 nodes incl. stickies)
 
 | Stage | Nodes |
 |---|---|
@@ -278,7 +288,7 @@ cost a lot. The `apac.` rows are the in-region price; confirm on first use that 
 | ③ clarify | `action = clarify` → `build clarify request` → `clarify` → `read clarify` → `validate claims` |
 | ③ escalate | `action = escalate` |
 | ③ join | `validate claims`, `action = escalate (gate 2)`, `action = escalate` → `to record` (No Operation) |
-| ④ Record → review | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` → `needs review?` → `open review` → `notify a human?` → `review alert` |
+| ④ Record → review | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` → `needs review?` → (`open review` → `notify a human?` → `review alert` \| `draft for cleared?` → `create gmail draft` → `record draft`) |
 
 **Errors** `01 Enquiry Desk - errors` (`BSmcb09mPBarqPjO`): `Error Trigger` → `read error` → `mark failed` → `build alert` → `log failure` → `telegram alert`
 **Review** `01 Enquiry Desk - review` (`QQEDcUxU7OJIeNn3`): GET `review page` → `read query` → `load enquiry` → `render page` → `respond page` · POST `review action` → `read form` → `apply decision` → `render result` → `respond result`
@@ -328,6 +338,7 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261017-084744` / `-085139` | 20/24 | 6/6 | 5/6 | 19–20/24 | 0 | $0.00246 | `classify` = Nova Pro: fails, and costs more than the baseline |
 | `20261017-085650` | 22/24 | 6/6 | 6/6 | 22/24 | 0/12 | $0.00238 | `clarify` = Nova Micro, **one run**: passes. Interrupted sweep: staging was restored 5 s before the end, but `clarify` only touches t02 and t21, which run early, so the result stands. Not a recommendation: `clarify` is not where accuracy is decided |
 | `20261017-234006` / `-234407` | 22/24 | 6/6 | 6/6 | 20/24, 22/24 | 0 | $0.00236 / $0.00270 | `draft` = Nova Pro, rest Nova 2 Lite: passes the gate but **no gain** over the baseline (21/24): same t06/t07 misses every run; run 1 added t03 (`claim check returned no result`) and t11 auto-sent a confused non-answer. Pro's `draft` stage costs about 2.1× Lite's ($0.0015 vs $0.0007). Verdict: keep Nova 2 Lite |
+| `20261018-135950` | 22/24 | 6/6 | 6/6 | 23/24 | 0 | $0.00233 | staging + Gmail drafts for cleared/clarify (decision 18): passes every gate; `test+` traffic creates no drafts |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)
@@ -365,7 +376,7 @@ Datasource and dashboard are provisioned from files, so the dashboard JSON in gi
   backstop. Re-run the crafted set (see *Things learned*) whenever prompts change. Cost +40% from the verifier.
 - **Scoring is strict on purpose:** `blocked` ≠ `escalate` (t06 counts as a miss though both reach a human).
 - **t15 / t23 categories** still wrong (past-paper bank, US admissions → course_content) — replies are correct.
-- **Nothing is sent automatically.** Approve creates a Gmail draft (decision 17); a person presses Send. Reading a real inbox is the next step, ideally for a pilot.
+- **Nothing is sent automatically.** Approve creates a Gmail draft (decision 17); cleared and clarify replies get one too (decision 18, live 2026-10-18); a person presses Send. Reading a real inbox is the next step, ideally for a pilot.
 - **Drift risk:** the classifier schema is in the `build classify request` node (live) and `schema/classification.schema.json` (documentation only; nothing reads it); they already differ in `summary.maxLength` and the `confidence` description. `parse classification` also does not validate `required` fields or enums. Planned: a note in the file plus `test/check_schema.py` (structural compare; could also cover the `facts` node vs `kb/facts.yaml`).
 - `score.py`: no error-type counts (503 / 429 / timeout); stale `--psql` docstring example.
 - Repo cleanup done 2026-10-17: removed the session-1 answer key (`workflows/01-intake.json`, still in git history) and the scratch `test/test.json`.

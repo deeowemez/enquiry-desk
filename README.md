@@ -45,6 +45,7 @@ flowchart LR
   H --> R
   R -- "escalated or blocked" --> T[/Telegram link/] --> P[review page:<br/>Approve or Take over]
   P -- approve --> M[Gmail draft<br/>a person sends it]
+  R -- "cleared or question" --> M
 ```
 
 Design rules that carry the project:
@@ -59,8 +60,8 @@ Design rules that carry the project:
    statement by a second model that must quote its evidence. One unsupported claim makes the reply `blocked`.
 5. **A person handles the risky ones.** Telegram carries a link and no customer data. The review page is private to
    the tailnet.
-6. **Nothing is ever sent automatically.** Approving a reply creates a Gmail *draft*; a person reads it and presses
-   Send.
+6. **Nothing is ever sent automatically.** Every reply that is ready becomes a Gmail *draft* (cleared and clarify
+   replies at once, escalated ones once a person approves); a person reads it and presses Send.
 7. **Fail loudly.** A production failure marks the row `failed`, logs it, sends a Telegram alert, and
    `test/replay.py` re-runs it with one command.
 

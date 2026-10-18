@@ -17,8 +17,8 @@
         0
       ],
       "notesInFlow": true,
-      "notes": "POST /enquiry. Answers via Respond nodes: 400 bad email, 202 received (+ id) once saved, 200 duplicate",
-      "webhookId": "b854dd39-12ea-41d3-be84-6a0cfd74b0c2"
+      "webhookId": "b854dd39-12ea-41d3-be84-6a0cfd74b0c2",
+      "notes": "POST /enquiry. Answers via Respond nodes: 400 bad email, 202 received (+ id) once saved, 200 duplicate"
     },
     {
       "parameters": {
@@ -283,7 +283,7 @@
     {
       "parameters": {
         "content": "### ④ RECORD\n`update enquiry` (status → processed), `run_log` (cost + model per stage), `reply` (blocked ones with the reason). Nothing is sent. By design.",
-        "height": 340,
+        "height": 580,
         "width": 3620,
         "color": 5
       },
@@ -424,9 +424,8 @@
                   "caseSensitive": true,
                   "leftValue": "",
                   "typeValidation": "strict",
-                  "version": 2
+                  "version": 3
                 },
-                "combinator": "and",
                 "conditions": [
                   {
                     "id": "r1-flag",
@@ -438,7 +437,8 @@
                       "singleValue": true
                     }
                   }
-                ]
+                ],
+                "combinator": "and"
               },
               "renameOutput": true,
               "outputKey": "① safety flag"
@@ -449,9 +449,8 @@
                   "caseSensitive": true,
                   "leftValue": "",
                   "typeValidation": "strict",
-                  "version": 2
+                  "version": 3
                 },
-                "combinator": "and",
                 "conditions": [
                   {
                     "id": "r2-sensitive",
@@ -462,7 +461,8 @@
                       "operation": "equals"
                     }
                   }
-                ]
+                ],
+                "combinator": "and"
               },
               "renameOutput": true,
               "outputKey": "② sensitive"
@@ -473,9 +473,8 @@
                   "caseSensitive": true,
                   "leftValue": "",
                   "typeValidation": "strict",
-                  "version": 2
+                  "version": 3
                 },
-                "combinator": "and",
                 "conditions": [
                   {
                     "id": "r3-vague",
@@ -487,7 +486,8 @@
                       "singleValue": true
                     }
                   }
-                ]
+                ],
+                "combinator": "and"
               },
               "renameOutput": true,
               "outputKey": "③ vague"
@@ -498,9 +498,8 @@
                   "caseSensitive": true,
                   "leftValue": "",
                   "typeValidation": "strict",
-                  "version": 2
+                  "version": 3
                 },
-                "combinator": "and",
                 "conditions": [
                   {
                     "id": "r4-missing",
@@ -512,7 +511,8 @@
                       "singleValue": true
                     }
                   }
-                ]
+                ],
+                "combinator": "and"
               },
               "renameOutput": true,
               "outputKey": "④ missing slots"
@@ -1133,14 +1133,14 @@
         2096
       ],
       "notesInFlow": true,
+      "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad",
       "credentials": {
         "telegramApi": {
           "id": "f0NSkRcTr0rBgguW",
           "name": "Telegram - alerts bot"
         }
       },
-      "notes": "Category + action + Open review link. NO customer data in Telegram. Link works on the tailnet only",
-      "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad"
+      "notes": "Category + action + Open review link. NO customer data in Telegram. Link works on the tailnet only"
     },
     {
       "parameters": {
@@ -1190,6 +1190,96 @@
       ],
       "notesInFlow": true,
       "notes": "Join point: every branch meets here, one line into ④. Passes items through unchanged"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "draft-cleared",
+              "leftValue": "={{ ['auto_send','clarify'].includes($('prepare row').first().json.action) && !!$('prepare row').first().json.draft_reply && $('prepare row').first().json.reply_blocked !== true && !String($('prepare row').first().json.from_email || '').startsWith('test+') }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b41c75ba-7af0-4e9d-bfb9-a996a594567f",
+      "name": "draft for cleared?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        2304
+      ],
+      "notesInFlow": true,
+      "notes": "Cleared (auto_send) and clarify replies get a Gmail DRAFT too. Not blocked, has text, and not scoring traffic (test+...) so test runs don't fill the mailbox"
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "={{ 'Re: ' + (($('prepare row').first().json.subject || '').trim() || 'your enquiry to Meridian Tutors') }}",
+        "message": "={{ $('prepare row').first().json.draft_reply }}",
+        "options": {
+          "sendTo": "={{ $('prepare row').first().json.from_email }}"
+        }
+      },
+      "id": "dee71577-fd57-4110-9cd5-4a0dceee273f",
+      "name": "create gmail draft",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        2304
+      ],
+      "notesInFlow": true,
+      "webhookId": "8c98dac3-2ade-4a78-b9d8-08a131c2e60e",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CJMeQj0HoOGHJp4E",
+          "name": "Gmail - drafts"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "notes": "DRAFT only, addressed to the customer. Nothing is ever sent: a person presses Send in Gmail. If Gmail fails the enquiry is unaffected (see record draft)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "update reply\n   set drafted_at = case when $2::text <> '' then now() end,\n       gmail_draft_id = nullif($2::text, ''),\n       draft_error = nullif($3::text, '')\n where enquiry_id = $1::uuid and body <> ''\nreturning enquiry_id as id, gmail_draft_id, draft_error;",
+        "options": {
+          "queryReplacement": "={{ [ $('prepare row').first().json.id, ($json.id ?? ''), ($json.error ? (typeof $json.error === 'string' ? $json.error : ($json.error.message ?? JSON.stringify($json.error))).slice(0, 300) : '') ] }}"
+        }
+      },
+      "id": "707558b8-8c62-4d1c-9fa1-04306188ee16",
+      "name": "record draft",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1568,
+        2304
+      ],
+      "alwaysOutputData": true,
+      "notesInFlow": true,
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "notes": "Records the Gmail draft id, or why there is none. sent_at is never set here"
     }
   ],
   "pinData": {},
@@ -1592,6 +1682,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "draft for cleared?",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -1655,6 +1752,29 @@
         [
           {
             "node": "prepare row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "draft for cleared?": {
+      "main": [
+        [
+          {
+            "node": "create gmail draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "create gmail draft": {
+      "main": [
+        [
+          {
+            "node": "record draft",
             "type": "main",
             "index": 0
           }

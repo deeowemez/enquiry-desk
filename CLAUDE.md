@@ -31,11 +31,12 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `test/sweep.py` | Runs model-comparison experiments on staging with a lock, `stop`, `status`, `report` and a guaranteed restore. **Use it for any multi-run experiment; don't hand-roll background jobs** |
 | `test/staging.py`, `test/staging.json` | Builds/refreshes the **staging copies** of intake + errors (`/webhook/enquiry-staging`, no Telegram) and the human-review workflow (`/webhook/review-staging`); `promote [review]` / `rollback [review]`. Test changes there; only a person promotes to the live workflow |
 | `test/replay.py` | Re-posts failed enquiries from the `dead_letter` view. `--dry-run` first |
-| `workflows/01-intake.mine.json` | **The live intake workflow** (export after every change) |
+| `workflows/01-intake.mine.json` | **The live intake workflow** (export after every change; `staging.py export --live`) |
 | `workflows/01-intake.staging.json` | Export of the **staging** intake (`test/staging.py export`). Matches live unless a change is waiting to be promoted |
 | `workflows/01-review.staging.json` | Export of the **staging** review workflow (the Gmail-draft step went live 2026-10-17) |
 | `workflows/01-errors.json`, `01-review.json` | Failure-path and human-review workflows. Chat ID is a `{{ALERT_CHAT_ID}}` placeholder (real value in `.env`) |
 | `dashboard/` | Grafana (compose, provisioned datasource + dashboard JSON) over the `stats_*` views, tailnet port 8443. `schema/dashboard_role.sql` makes its read-only DB login |
+| `console/mockups/` | Draft screens (HTML + PNG, invented data) for a dedicated staff console that would replace Grafana; `build.py` re-renders them. Not built yet |
 | `workflows/IMPORT.md` | How to import the three workflows, with credentials, `config` and a first run |
 
 ## Environment

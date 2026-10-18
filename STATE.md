@@ -259,6 +259,35 @@ Record in segments, about 4–5 minutes.
     traffic is exhaustive, and that the login can't read raw tables. Phase 2: facts editing (needs the facts in the database, not the hand-copied node), a read-only
     Prompts tab, and re-checks on staging (see the console mockups). Grafana was removed the same day (see *Dashboard*).
 
+22. **Facts in the database, and staff console phase 2** (2026-10-18, **live**).
+    The fact table moved from a hand-copied JavaScript object into `fact_set` (`schema/facts.sql`, both databases): one row per version,
+    statuses `draft` / `live` / `archived` / `discarded`, at most one `live` and one `draft` (partial unique indexes), seeded as v1 from the old node
+    (byte-identical, key order included). In each database the workflow reads its single `live` row, so **staging's live set is the candidate under test and
+    production's is what customers' replies are grounded on**; publishing copies a tested document across. Staging workflow: a new `load facts` Postgres node
+    (credential `Postgres - staging`; Always Output Data on) feeds the `facts` Code node, which now takes the document from it and passes the original items
+    through, so every node reading `$('facts').first().json.facts` is unchanged; `prepare row` and `update enquiry` record `enquiry.facts_version`. A missing
+    live set throws "No live fact set" and the staging errors workflow marks the row `failed` (tested; this also finally exercised the staging errors workflow).
+    `score.py` takes its "allowed numbers" from the database under test (falling back to the seed `kb/facts.json`), so an edited price isn't flagged as invented.
+    **Lessons:** (1) **store the document as `json`, not `jsonb`**: jsonb re-sorts object keys, which put `trial` before the price in what the model sees and
+    made a plain price question block twice; json keeps the author's order exactly. (2) **A Postgres node that returns 0 rows emits no items**, so the node after it
+    never runs and the execution ends "successfully" with the enquiry stuck at `received`: `load facts` needs Always Output Data so the next node throws.
+    (3) `parse classification` rebuilds the item from `envelope`, so values set after it (like `facts_version`) are read back with `$('facts')`, as the facts are.
+    (4) The console's gate **runs the existing `score.py` and `compare.py`** (the image carries python3, psql, the scorer and the baseline run's results) instead of
+    re-implementing them, so it can't disagree with the command line; a comparison that can't run (missing baseline file) is reported as an error and records
+    nothing, never as a failed gate.
+    **Console (`console/`, port 8444):** Facts (list with the topics that see each fact, edit into a draft, diff, apply to staging, run the 24-case test, publish,
+    history and restore), a read-only Prompts tab (a snapshot generated from the workflow export, with a test that fails when it is stale), and re-checks (one
+    enquiry, or the latest N of a topic, re-sent to staging as `test+recheck-…` so no Gmail draft, no Telegram, not real traffic; the text is read with a narrow login
+    and never returned). **Publishing is refused unless exactly the staged facts passed the gate** (`publishGuard`, unit-tested), nothing is ever deleted (the
+    `console_facts` login has no DELETE; a thrown-away draft is marked), edits are validated against the shape the workflow relies on (zod, tested against the real
+    table, with a prototype-pollution-safe path parser), and the topic mapping mirrors `select facts` (a test parses the workflow and fails on drift; it also showed that
+    `policies` is shown to no topic today). 80 tests. Acceptance: draft → apply → 24-case gate → publish → restore against a throwaway production database; the gate
+    run from inside the container passes (`20261018-083234`: 22/24, 6/6, 22/24, 0 invented, $0.00238).
+    **Promoted 2026-10-18** (4 nodes; backup `promote-20261018-084242.json`): live Postgres nodes all on production's credential, two live enquiries
+    answered with `facts_version` 1, nothing in staging, the console now reports the workflow reads the table, and a full live run `20261018-164314` passes every
+    gate (22/24, 6/6, 23/24, 0 invented, $0.00238). `kb/facts.json` (exported from production v1, identical to the old node, order included) is now the seed for
+    `seed-facts.mjs`, the unit tests and `score.py`'s fallback; `kb/facts.yaml` is kept only for its comments. WORKFLOW, IMPORT, README and CLAUDE.md updated.
+
 ## Model strategy (decided 2026-10-14)
 
 - **Nova models only** while the credit is the budget (rule: credits only). Claude is out until a client pays.
@@ -316,11 +345,11 @@ cost a lot. The `apac.` rows are the in-region price; confirm on first use that 
 
 ## Node map
 
-**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 50 nodes incl. stickies)
+**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 51 nodes incl. stickies)
 
 | Stage | Nodes |
 |---|---|
-| ① Intake | `Webhook` → `normalise` → `valid email?` (no → `respond 400`) → `record received` → `envelope` → `duplicate?` (yes → `respond duplicate`) → `respond 202` → `config` → `facts` |
+| ① Intake | `Webhook` → `normalise` → `valid email?` (no → `respond 400`) → `record received` → `envelope` → `duplicate?` (yes → `respond duplicate`) → `respond 202` → `config` → `load facts` → `facts` |
 | ② Understand → route | `build classify request` → `classify` → `parse classification` → `derive missing slots` → `route` |
 | ③ auto_send | `action = auto_send` → `select facts` → `build draft request` → `draft` → `read draft` → `answerable?` → (`build verify request` → `verify` → `read verify` → `validate claims` \| `action = escalate (gate 2)`) |
 | ③ clarify | `action = clarify` → `build clarify request` → `clarify` → `read clarify` → `validate claims` |
@@ -336,8 +365,7 @@ in `.env`. Settings: save successful production executions = all; intake's Error
 Canvas: four stacked stage frames (3620 px wide), fits one screen at **Shift+1**.
 
 **Repo files:** `WORKFLOW.md` (node-by-node guide) · `workflows/01-intake.mine.json`, `01-errors.json`,
-`01-review.json` (+ `IMPORT.md`) · `kb/facts.yaml` (source of truth — the `facts` node is a hand copy, **change
-both**) · `schema/schema.sql` (tables, `dead_letter`, `stats_*` views) · `test/score.py`, `test/replay.py`,
+`01-review.json` (+ `IMPORT.md`) · `kb/facts.json` (seed of the `fact_set` table, which is the live fact table; change facts in the console) · `schema/schema.sql` (tables, `dead_letter`, `stats_*` views) · `test/score.py`, `test/replay.py`,
 `test/staging.py` (+ `staging.json`), `test/compare.py` (+ `baseline.json`), `test/enquiries.jsonl`, `test/results/`.
 
 **Dashboard views** (all read-only, no email/subject/body):
@@ -379,6 +407,8 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261018-135950` | 22/24 | 6/6 | 6/6 | 23/24 | 0 | $0.00233 | staging + Gmail drafts for cleared/clarify (decision 18): passes every gate; `test+` traffic creates no drafts |
 | `20261018-144119` | 22/24 | 6/6 | 6/6 | 22/24 | 0 | $0.00236 | **live** after decision 18 was promoted: passes every gate; `test+` traffic made 0 drafts. (Re-run: the first live run, `20261018-141654`, passed identically but its result file was lost.) |
 | `20261018-150335` | 22/24 | 6/6 | 6/6 | 21/24 | 0 | $0.00240 | staging on its **own database** (decision 20): passes every gate; 24 rows in `enquiry_staging`, 0 in production |
+| `20261018-160317` | 22/24 | 6/6 | 6/6 | 20/24 | 0 | $0.00226 | staging with the facts read from the database (decision 22): passes every gate; only t03 differs from the previous run (verifier variance), and the document is byte-identical to the old node |
+| `20261018-164314` | 22/24 | 6/6 | 6/6 | 23/24 | 0 | $0.00238 | **live** after promoting `load facts` (decision 22): facts read from the database; passes every gate |
 | `20261018-142648` | 22/24 | 6/6 | 6/6 | 22/24 | 0 | $0.00237 | staging with `is_test` read from the database (decision 19): passes every gate; 0 drafts from scoring traffic |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0

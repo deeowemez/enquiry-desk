@@ -1,3 +1,9 @@
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# NOT READ BY ANYTHING since 2026-10-18. The live fact table is the `fact_set` table in each database (versioned, edited
+# and published through the staff console, see console/README.md). It was seeded from kb/facts.json, the exact document
+# production used before. This file is kept for its comments, which explain why some facts are the way they are
+# (for example, why discounts is deliberately empty). Do not edit it expecting a change: edit the facts in the console.
+# ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Meridian Tutors — fact table (FICTIONAL COMPANY, synthetic data)
 # The reply step may assert NOTHING that is not in this file.
 # If a customer asks something not covered here, the correct answer is

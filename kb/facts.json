@@ -1,0 +1,137 @@
+{
+  "company": {
+    "name": "Meridian Tutors",
+    "fictional": true,
+    "contact_email": "hello@meridiantutors.example"
+  },
+  "support_hours": {
+    "days": "Mon-Fri",
+    "open_utc": "09:00",
+    "close_utc": "18:00",
+    "note": "Staffed from the UK. 09:00-18:00 UTC is 17:00-02:00 Hong Kong time."
+  },
+  "booking": {
+    "how": "Reply to this email with the student's subject and preferred lesson slot. We confirm by email within one UK working day.",
+    "channels": "email only - there is no online booking form, website sign-up, app or phone line.",
+    "scope": "Covers booking a free trial or a new subscription in a listed lesson slot. It says nothing about start dates, joining mid-term, or moving, pausing or cancelling an existing lesson - those are decided by a member of staff, not by replying."
+  },
+  "pricing": {
+    "currency": "GBP",
+    "subscription_per_subject_per_month": 95,
+    "dropin_single_lesson": 25,
+    "trial": {
+      "price": 0,
+      "applies_to": "Any subject marked available true, taken in that subject's scheduled lesson slot.",
+      "includes": [
+        "One live lesson with a tutor",
+        "Access to the past-paper bank",
+        "One recorded topic module"
+      ]
+    },
+    "discounts": [],
+    "refund_policy_summary": "Handled case by case by a human."
+  },
+  "subjects": [
+    {
+      "id": "bio_gcse",
+      "name": "Biology GCSE",
+      "level": "GCSE",
+      "available": true
+    },
+    {
+      "id": "chem_gcse",
+      "name": "Chemistry GCSE",
+      "level": "GCSE",
+      "available": true
+    },
+    {
+      "id": "maths_gcse",
+      "name": "Maths GCSE",
+      "level": "GCSE",
+      "available": true
+    },
+    {
+      "id": "bio_alevel",
+      "name": "Biology A-Level",
+      "level": "A-Level",
+      "available": true
+    },
+    {
+      "id": "chem_alevel",
+      "name": "Chemistry A-Level",
+      "level": "A-Level",
+      "available": true
+    },
+    {
+      "id": "phys_alevel",
+      "name": "Physics A-Level",
+      "level": "A-Level",
+      "available": false
+    }
+  ],
+  "admissions_support": [
+    {
+      "id": "personal_statement",
+      "name": "Personal statement review",
+      "price": 150
+    },
+    {
+      "id": "interview_prep",
+      "name": "Admissions interview coaching",
+      "price": 200
+    },
+    {
+      "id": "ucat_prep",
+      "name": "UCAT preparation course",
+      "price": 250
+    }
+  ],
+  "lesson_schedule": {
+    "timezone": "Asia/Hong_Kong",
+    "slots": [
+      {
+        "subject": "bio_alevel",
+        "day": "Saturday",
+        "start": "18:00",
+        "end": "19:30"
+      },
+      {
+        "subject": "chem_alevel",
+        "day": "Sunday",
+        "start": "18:00",
+        "end": "19:30"
+      },
+      {
+        "subject": "bio_gcse",
+        "day": "Saturday",
+        "start": "16:00",
+        "end": "17:00"
+      },
+      {
+        "subject": "maths_gcse",
+        "day": "Sunday",
+        "start": "16:00",
+        "end": "17:00"
+      }
+    ]
+  },
+  "deadlines": [
+    {
+      "name": "UCAS - medicine, dentistry, veterinary, Oxford and Cambridge",
+      "date": "2026-10-15",
+      "time_uk": "18:00",
+      "verified": true
+    },
+    {
+      "name": "UCAS - equal consideration, most other courses",
+      "date": "2027-01-14",
+      "time_uk": "18:00",
+      "verified": false
+    }
+  ],
+  "policies": {
+    "guarantees": "none",
+    "minimum_age": 13,
+    "safeguarding": "Anything touching a child's wellbeing goes to a human."
+  }
+}

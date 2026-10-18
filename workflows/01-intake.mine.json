@@ -37,7 +37,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Mirror of kb/facts.yaml. Keep them in sync by hand for now.\nconst facts = {\n  company: { name: 'Meridian Tutors', fictional: true,\n             contact_email: 'hello@meridiantutors.example' },\n  support_hours: { days: 'Mon-Fri', open_utc: '09:00', close_utc: '18:00',\n    note: 'Staffed from the UK. 09:00-18:00 UTC is 17:00-02:00 Hong Kong time.' },\n  booking: {\n    how: \"Reply to this email with the student's subject and preferred lesson slot. We confirm by email within one UK working day.\",\n    channels: 'email only - there is no online booking form, website sign-up, app or phone line.',\n    scope: 'Covers booking a free trial or a new subscription in a listed lesson slot. It says nothing about start dates, joining mid-term, or moving, pausing or cancelling an existing lesson - those are decided by a member of staff, not by replying.'\n  },\n  pricing: {\n    currency: 'GBP',\n    subscription_per_subject_per_month: 95,\n    dropin_single_lesson: 25,\n    trial: { price: 0,\n             applies_to: 'Any subject marked available true, taken in that subject\\'s scheduled lesson slot.',\n             includes: ['One live lesson with a tutor',\n                                  'Access to the past-paper bank',\n                                  'One recorded topic module'] },\n    discounts: [],                        // deliberately empty\n    refund_policy_summary: 'Handled case by case by a human.'\n  },\n  subjects: [\n    { id: 'bio_gcse',    name: 'Biology GCSE',      level: 'GCSE',    available: true },\n    { id: 'chem_gcse',   name: 'Chemistry GCSE',    level: 'GCSE',    available: true },\n    { id: 'maths_gcse',  name: 'Maths GCSE',        level: 'GCSE',    available: true },\n    { id: 'bio_alevel',  name: 'Biology A-Level',   level: 'A-Level', available: true },\n    { id: 'chem_alevel', name: 'Chemistry A-Level', level: 'A-Level', available: true },\n    { id: 'phys_alevel', name: 'Physics A-Level',   level: 'A-Level', available: false }\n  ],\n  admissions_support: [\n    { id: 'personal_statement', name: 'Personal statement review', price: 150 },\n    { id: 'interview_prep',     name: 'Admissions interview coaching', price: 200 },\n    { id: 'ucat_prep',          name: 'UCAT preparation course', price: 250 }\n  ],\n  lesson_schedule: { timezone: 'Asia/Hong_Kong', slots: [\n    { subject: 'bio_alevel',  day: 'Saturday', start: '18:00', end: '19:30' },\n    { subject: 'chem_alevel', day: 'Sunday',   start: '18:00', end: '19:30' },\n    { subject: 'bio_gcse',    day: 'Saturday', start: '16:00', end: '17:00' },\n    { subject: 'maths_gcse',  day: 'Sunday',   start: '16:00', end: '17:00' }\n  ]},\n  deadlines: [\n    { name: 'UCAS - medicine, dentistry, veterinary, Oxford and Cambridge',\n      date: '2026-10-15', time_uk: '18:00', verified: true },\n    { name: 'UCAS - equal consideration, most other courses',\n      date: '2027-01-14', time_uk: '18:00', verified: false }\n  ],\n  policies: { guarantees: 'none', minimum_age: 13,\n    safeguarding: \"Anything touching a child's wellbeing goes to a human.\" }\n};\n\nreturn $input.all().map(i => ({ json: { ...i.json, facts } }));"
+        "jsCode": "// The fact table comes from the database (fact_set, the one `live` row), loaded by `load facts`. The object has exactly the\n// shape the hand-copied version had, so every node that reads $('facts').first().json.facts is unchanged.\nconst row = $('load facts').first()?.json;\nif (!row || !row.doc) throw new Error('No live fact set: the fact_set table has no live version. Seed it (console/scripts/seed-facts.mjs).');\nconst facts = row.doc;\n\n// Pass the original items through (the Postgres node replaced them), and remember which version answered each enquiry.\nreturn $('config').all().map(i => ({ json: { ...i.json, facts, facts_version: row.version } }));\n"
       },
       "id": "f309e210-6b56-49d5-bd75-bcae2b5e574b",
       "name": "facts",
@@ -178,7 +178,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Every branch arrives here: escalate (no draft), escalate-at-gate-2 / blocked (draft kept, blocked),\n// clarify and auto_send (validated draft).\nreturn $input.all().map(item => {\n  const p = item.json;\n  const c = p.classification;\n  const classifyCost = p.classify_cost_usd ?? 0;\n  const draftCost = p.draft_cost_usd ?? 0;\n  const verifyCost = p.verify_cost_usd ?? 0;\n\n  return { json: {\n    id: p.id,\n    source: p.source,\n    external_key: p.external_key,\n    received_at: p.received_at,\n    from_email: p.from_email,\n    is_test: p.is_test === true,                // scoring traffic (database-defined): no alert, no Gmail draft\n    subject: p.subject,\n    body: p.body,\n    category: c.category,\n    confidence: c.confidence,\n    language: c.language,\n    safety_flags: JSON.stringify(c.safety_flags ?? []),\n    missing_slots: JSON.stringify(c.missing_slots ?? []),\n    action: p.action,\n    draft_reply: p.draft_reply ?? '',\n    draft_stage: p.draft_stage ?? '',           // 'draft' | 'clarify' | '' (no model call)\n    answerable: p.answerable ?? null,\n    unanswered: p.unanswered ?? '',\n    validated: p.validated === true,\n    reply_blocked: p.reply_blocked === true,\n    block_reason: p.block_reason ?? '',\n    grounded_on: JSON.stringify(Object.keys(p.selected_facts ?? {})),\n    draft_tokens: p.draft_tokens ?? null,\n    classify_model: p.classify_model,\n    draft_model: p.draft_model ?? null,\n    verify_model: p.verify_model ?? null,\n    classify_cost_usd: classifyCost,\n    draft_cost_usd: draftCost,\n    verify_cost_usd: verifyCost,\n    total_cost_usd: Number((classifyCost + draftCost + verifyCost).toFixed(6))\n  }};\n});"
+        "jsCode": "// Every branch arrives here: escalate (no draft), escalate-at-gate-2 / blocked (draft kept, blocked),\n// clarify and auto_send (validated draft).\nreturn $input.all().map(item => {\n  const p = item.json;\n  const c = p.classification;\n  const classifyCost = p.classify_cost_usd ?? 0;\n  const draftCost = p.draft_cost_usd ?? 0;\n  const verifyCost = p.verify_cost_usd ?? 0;\n\n  return { json: {\n    id: p.id,\n    source: p.source,\n    external_key: p.external_key,\n    received_at: p.received_at,\n    from_email: p.from_email,\n    facts_version: $('facts').first().json.facts_version ?? null,   // which fact_set version answered this enquiry (read from `facts`, like every node that uses the facts)\n    is_test: p.is_test === true,                // scoring traffic (database-defined): no alert, no Gmail draft\n    subject: p.subject,\n    body: p.body,\n    category: c.category,\n    confidence: c.confidence,\n    language: c.language,\n    safety_flags: JSON.stringify(c.safety_flags ?? []),\n    missing_slots: JSON.stringify(c.missing_slots ?? []),\n    action: p.action,\n    draft_reply: p.draft_reply ?? '',\n    draft_stage: p.draft_stage ?? '',           // 'draft' | 'clarify' | '' (no model call)\n    answerable: p.answerable ?? null,\n    unanswered: p.unanswered ?? '',\n    validated: p.validated === true,\n    reply_blocked: p.reply_blocked === true,\n    block_reason: p.block_reason ?? '',\n    grounded_on: JSON.stringify(Object.keys(p.selected_facts ?? {})),\n    draft_tokens: p.draft_tokens ?? null,\n    classify_model: p.classify_model,\n    draft_model: p.draft_model ?? null,\n    verify_model: p.verify_model ?? null,\n    classify_cost_usd: classifyCost,\n    draft_cost_usd: draftCost,\n    verify_cost_usd: verifyCost,\n    total_cost_usd: Number((classifyCost + draftCost + verifyCost).toFixed(6))\n  }};\n});"
       },
       "id": "4db82172-3ce9-410c-85aa-450bf68bcd44",
       "name": "prepare row",
@@ -194,9 +194,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "update enquiry\n   set category = $2, confidence = $3::numeric, language = $4,\n       safety_flags = $5::jsonb, missing_slots = $6::jsonb, action = $7,\n       status = 'processed'\n where id = $1::uuid\nreturning id;",
+        "query": "update enquiry\n   set category = $2, confidence = $3::numeric, language = $4,\n       safety_flags = $5::jsonb, missing_slots = $6::jsonb, action = $7,\n       facts_version = $8::int,\n       status = 'processed'\n where id = $1::uuid\nreturning id;",
         "options": {
-          "queryReplacement": "={{ [ $json.id, $json.category, $json.confidence, $json.language, $json.safety_flags, $json.missing_slots, $json.action ] }}"
+          "queryReplacement": "={{ [ $json.id, $json.category, $json.confidence, $json.language, $json.safety_flags, $json.missing_slots, $json.action, $json.facts_version ] }}"
         }
       },
       "id": "093b3830-e611-4405-ac98-25010fd7288e",
@@ -1280,6 +1280,30 @@
         }
       },
       "notes": "Records the Gmail draft id, or why there is none. sent_at is never set here"
+    },
+    {
+      "id": "95944c74-04c3-490b-98da-a99985b16d5c",
+      "name": "load facts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1680,
+        -176
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select version, doc from fact_set where status = 'live' order by version desc limit 1;",
+        "options": {}
+      },
+      "notesInFlow": true,
+      "notes": "The fact table lives in the database (fact_set), versioned. This reads the one live version; the staging workflow reads the staging database's, production reads production's. No live row = Always Output Data still passes an empty item, so the next node runs and throws, the run fails loudly and the errors workflow takes over (the enquiry is already saved)",
+      "alwaysOutputData": true
     }
   ],
   "pinData": {},
@@ -1376,7 +1400,7 @@
       "main": [
         [
           {
-            "node": "facts",
+            "node": "load facts",
             "type": "main",
             "index": 0
           }
@@ -1775,6 +1799,17 @@
         [
           {
             "node": "record draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "load facts": {
+      "main": [
+        [
+          {
+            "node": "facts",
             "type": "main",
             "index": 0
           }

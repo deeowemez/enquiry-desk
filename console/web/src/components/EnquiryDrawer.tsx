@@ -1,7 +1,11 @@
 import { useSearchParams } from 'react-router-dom';
 import type { EnquiryDetail } from '../../../shared/api';
 import { flagLabel, STAGE_LABEL } from '../../../shared/labels';
-import { useApi } from '../api';
+import { useState } from 'react';
+import { useApi, useSend } from '../api';
+import { useJob } from '../api';
+import { JobPanel } from './JobPanel';
+import type { Job } from '../../../shared/api';
 import { money, when } from '../format';
 import { Dialog, OutcomePill } from '../ui';
 
@@ -30,6 +34,9 @@ export function EnquiryDrawer({ id }: { id: string }) {
 
 function Detail({ d }: { d: EnquiryDetail }) {
   const r = d.row;
+  const [showCheck, setShowCheck] = useState(false);
+  const job = useJob();
+  const start = useSend<Job, { ids: string[] }>('POST', '/api/jobs/impact');
   const total = d.stages.reduce((a, s) => a + s.costUsd, 0);
   return (
     <>
@@ -63,8 +70,10 @@ function Detail({ d }: { d: EnquiryDetail }) {
         })}
       </div>
       <div className="hide">▣ Customer name, email, subject, message and draft text are not shown in this console. {d.reviewUrl ? 'Use the button below to read them on the private review page.' : d.hasDraft ? "The reply is a Gmail draft in the mailbox's Drafts folder." : 'Only escalated and blocked enquiries have a review page.'}</div>
+      {showCheck && <div className="card"><h3>Re-check on staging</h3><div className="sub">Runs this enquiry again with the facts staging serves now. Nothing is sent to anyone.</div>{start.error && <div className="err" role="alert">{start.error.message}</div>}<JobPanel job={job.data} kind="impact" /></div>}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 'auto' }}>
         {d.reviewUrl ? <a className="btn" href={d.reviewUrl} target="_blank" rel="noopener noreferrer">Open draft on review page ↗</a> : <span className="btn" aria-disabled="true">Open draft on review page ↗</span>}
+        <button className="btn alt" disabled={start.isPending || job.data?.status === 'running'} onClick={() => { setShowCheck(true); start.mutate({ ids: [d.row.id] }); }}>Re-check on staging</button>
         <button className="btn alt" onClick={() => navigator.clipboard?.writeText(d.row.id)}>Copy id</button>
         <span className="btn alt" style={{ marginLeft: 'auto' }} aria-disabled="true">Total cost {money(total || r.costUsd)}</span>
       </div>

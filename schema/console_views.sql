@@ -59,7 +59,8 @@ select e.id,
        (r.sent_at is not null)                             as sent,
        coalesce(k.kinds, '{}')                             as block_kinds,
        coalesce(c.cost_usd, 0)                             as cost_usd,
-       coalesce(c.model_calls, 0)                          as model_calls
+       coalesce(c.model_calls, 0)                          as model_calls,
+       e.facts_version                                      -- which fact_set version answered it (null before the workflow read the database)
 from enquiry e
 left join lateral (select blocked, drafted_at, gmail_draft_id, sent_at from reply
                     where enquiry_id = e.id order by approved_at desc nulls last limit 1) r on true

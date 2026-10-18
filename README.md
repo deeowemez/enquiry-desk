@@ -13,11 +13,11 @@ to a person, and measure both.
 
 ## Results
 
-24 hand-labelled enquiries, re-run after every change. Latest run on the live workflow (`20261017-113732`):
+24 hand-labelled enquiries, re-run after every change. Latest run on the live workflow (`20261018-164314`):
 
 | Category | Safety flags | Actions | Invented claims in sendable replies | Failed runs | Cost per enquiry |
 |---|---|---|---|---|---|
-| 22/24 | **6/6** | 21/24 | **0** | 0 | about **$0.0023** |
+| 22/24 | **6/6** | 23/24 | **0** | 0 | about **$0.0024** |
 
 - **Safety flags** (child wellbeing, prompt injection, and so on): every flagged case is escalated, whatever the
   model's confidence.
@@ -54,8 +54,9 @@ Design rules that carry the project:
    is still there.
 2. **Models extract; code decides.** The model returns structured fields (category, details, safety flags). Plain
    code decides what is missing and where the enquiry goes. Confidence is recorded, never used for routing.
-3. **Answer only from facts.** `kb/facts.yaml` is a fact table, not a search index. Each category sees only its own
-   facts, and every fact has a scope (for example, whether a trial applies to a given subject).
+3. **Answer only from facts.** The fact table (versioned in the database, `fact_set`) is a fact table, not a search index. Each category sees only its own
+   facts, and every fact has a scope (for example, whether a trial applies to a given subject). Facts change only through the staff
+   console: a draft is applied to staging, must pass the 24-case test, and only then can be published.
 4. **Check every claim.** Prices, dates and times are checked by regex, availability by code, and every other
    statement by a second model that must quote its evidence. One unsupported claim makes the reply `blocked`.
 5. **A person handles the risky ones.** Telegram carries a link and no customer data. The review page is private to
@@ -98,7 +99,8 @@ Four of the cases separate this from a chatbot:
 You need n8n and Postgres (Docker is fine), an AWS account with Bedrock access to the Nova models, a Telegram bot for
 alerts, and a Gmail OAuth2 credential for drafts.
 
-1. Create the tables: `psql … -f schema/schema.sql`.
+1. Create the tables and the first version of the fact table: `psql … -f schema/schema.sql`, `psql … -f schema/facts.sql`,
+   then `node console/scripts/seed-facts.mjs | psql …`.
 2. Start n8n with `NODE_FUNCTION_ALLOW_BUILTIN=crypto` (the normalise step uses Node's `crypto`).
 3. Import the workflows in `workflows/` (see [workflows/IMPORT.md](workflows/IMPORT.md)): intake, errors and review.
    `01-intake.mine.json` is the current intake; in it and in the errors workflow, replace the `{{ALERT_CHAT_ID}}`
@@ -121,7 +123,7 @@ alerts, and a Gmail OAuth2 credential for drafts.
 
 | Path | What it is |
 |---|---|
-| `kb/facts.yaml` | The fact table (source of truth; the `facts` node in n8n is a hand copy, so change both) |
+| `kb/facts.json` | The first version of the fact table, used to seed `fact_set`. The live table is in the database and changes only through the console (test on staging, then publish) |
 | `schema/` | The enquiry envelope, the classification JSON schema, and the Postgres tables and dashboard views |
 | `workflows/` | n8n exports: intake (live and staging), errors, review (live and staging) |
 | `console/` | Staff console (TypeScript API + React app) over the `stats_*` views: queue, enquiry detail, blocked reasons, cost, health |

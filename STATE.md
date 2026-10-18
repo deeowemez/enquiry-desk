@@ -246,6 +246,19 @@ Record in segments, about 4–5 minutes.
     `20261018-150335` passes every gate with all 24 enquiries in `enquiry_staging`. **Pass `--psql ... -d enquiry_staging` to `score.py` and `replay.py` for
     staging.** Every schema change must now be applied to both databases, staging first. Not exercised: the staging errors workflow (a real staging failure).
 
+21. **Staff console, phase 1 (read-only)** (2026-10-18, **running** at `https://raspberrypi.tailf7a7bf.ts.net:8444`, not committed yet). TypeScript end to end:
+    a Fastify API (`console/server/`) plus a React/Vite app (`console/web/`), one Docker container (30 MB), joined to the `n8n-stack_default` network,
+    published on `127.0.0.1:3100` and reached through Tailscale Serve, which supplies the signed-in user (`Tailscale-User-Login`). It needs a backend because
+    the browser must not hold a database login and the privacy rules (no customer text, no token in lists) have to be enforced on a server. Data comes only from
+    views: `schema/console_views.sql` adds `stats_block_problem` (the single bucketing of block reasons; `stats_block_reasons` now counts it),
+    `stats_run_stage` (run_log with `error` bucketed, never raw) and `stats_enquiry_detail` (structured fields plus `review_token`, console only), read through
+    the new `console_ro` role (`schema/console_role.sql`; SELECT on the views only, read-only by default; verified denied on `enquiry` and `reply`). Applied to
+    **both** databases. Screens: Overview, Needs a person, Enquiries + detail drawer, Blocked & why + popup, Cost & models, Health; Facts and Prompts are greyed
+    "soon". Reasons are built from fixed vocabularies in `console/shared/labels.ts`. 24 integration tests (`npm test`) cover sign-in, input validation including a
+    hostile value, no forbidden fields or tokens in any list response, the review link appearing only as `reviewUrl` on a detail, security headers, that real + test
+    traffic is exhaustive, and that the login can't read raw tables. Phase 2: facts editing (needs the facts in the database, not the hand-copied node), a read-only
+    Prompts tab, and re-checks on staging (see the console mockups). Grafana was removed the same day (see *Dashboard*).
+
 ## Model strategy (decided 2026-10-14)
 
 - **Nova models only** while the credit is the budget (rule: credits only). Claude is out until a client pays.
@@ -371,22 +384,12 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)
 
-## Dashboard (Grafana, 2026-10-18)
+## Dashboard (Grafana: removed 2026-10-18)
 
-Grafana 11.2 runs in its own compose project (`dashboard/`), joined to the `n8n-stack_default` network so it reaches
-Postgres by service name (Postgres is bound to loopback on the host). It is served on the tailnet only at
-`https://raspberrypi.tailf7a7bf.ts.net:8443` (`tailscale serve --https=8443`; undo with `--https=8443 off`).
-Datasource and dashboard are provisioned from files, so the dashboard JSON in git is the source of truth
-(`allowUiUpdates: false`; edit the JSON, not the UI).
-
-- **Read-only login:** `schema/dashboard_role.sql` creates `grafana_ro`, granted SELECT on the six `stats_*` views and
-  nothing else (verified: denied on `enquiry`, no write privilege, `default_transaction_read_only = on`). Views carry no
-  email, subject or body.
-- **Panels:** dead letter, stuck, failures 24h, awaiting review, average cost per enquiry, last processed; enquiries per
-  day by outcome; why replies were blocked; spend per day; the review queue. A **Traffic** variable filters real vs
-  scoring-run (`is_test`) rows; it defaults to both because every enquiry so far is synthetic.
-- **Passwords** are in `dashboard/.env` (gitignored; `.env.example` shows the names). Not in any committed file.
-- Every panel query was run through the Grafana API and returned rows before it was committed.
+A Grafana dashboard over the `stats_*` views ran briefly on tailnet port 8443 (its own compose project, a read-only `grafana_ro`
+login, a provisioned dashboard). It was replaced by the staff console (decision 21) and **removed the same day**: container, data
+volume, image, the `:8443` Tailscale Serve entry, the `grafana_ro` role and the `dashboard/` folder. It stays in git history
+(`f97a7de`). The `stats_*` views it was built on are still the data layer, now read by the console through `console_ro`.
 
 ## Open issues
 

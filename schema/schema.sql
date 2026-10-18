@@ -86,7 +86,7 @@ alter table reply add column if not exists gmail_draft_id text;
 alter table reply add column if not exists draft_error text;
 create index if not exists enquiry_review_pending_idx on enquiry (received_at) where review_status = 'pending';
 
--- Dashboard views. Every dashboard number is defined here, once, so Grafana / React / the README all
+-- Dashboard views. Every dashboard number is defined here, once, so the console, the README and any other tool all
 -- read the same answer. No view exposes from_email, subject or body: a dashboard user can be granted
 -- these views only, and can't leak customer data even by mistake.
 --   day      = calendar day in Hong Kong time (the customers' day, UTC+8)

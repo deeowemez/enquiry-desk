@@ -25,7 +25,8 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `kb/facts.json` | The first version of the fact table (seeds `fact_set`). **The live fact table is the `fact_set` table in each database** (decision 22): the workflow's `load facts` reads it, and it changes only through the console (draft → staging → 24-case test → publish). `kb/facts.yaml` is kept only for its comments; nothing reads it |
 | `schema/` | Envelope shape, classification JSON schema, Postgres tables |
 | `test/enquiries.jsonl` | 24 labelled cases. `t05`, `t11`, `t18`, `t24` are the ones that matter most |
-| `test/score.py` | Scorer: posts each case to a **production-mode** webhook (live or staging), reads back the row, reports accuracy. `--label` names the run. `--help` for usage |
+| `test/score.py` | Scorer: posts each case to a **production-mode** webhook (live or staging), reads back the row, reports accuracy. `--label` names the run; `--cases` another case file. Counts invented prices **and links**. `--help` for usage |
+| `test/links.jsonl` | 5 booking-link cases (`--cases test/links.jsonl`): the link appears where expected, and never an invented one. Kept out of the 24-case gate so the baseline stays comparable |
 | `test/results/` | One JSONL per scoring run — compare before/after a change |
 | `test/compare.py`, `test/baseline.json` | Table of runs; `--check RUN` gates a run against the baseline (safety, invented claims, failures, accuracy, cost) |
 | `test/sweep.py` | Runs model-comparison experiments on staging with a lock, `stop`, `status`, `report` and a guaranteed restore. **Use it for any multi-run experiment; don't hand-roll background jobs** |

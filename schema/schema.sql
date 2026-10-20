@@ -150,6 +150,7 @@ from (select r.enquiry_id,
                when p like 'Not answerable from facts%' then 'gate 2: facts can''t answer'
                when p like 'price %'                    then 'invented price'
                when p like 'percentage %'               then 'invented percentage'
+               when p like 'link %'                     then 'invented link'
                when p like 'time %'                     then 'time not in facts'
                when p like 'date %'                     then 'date not in facts / unverified'
                when p like 'says %unavailable%'         then 'available subject called unavailable'
@@ -159,7 +160,7 @@ from (select r.enquiry_id,
              end as kind
         from reply r,
              regexp_split_to_table(r.block_reason,
-               '; (?=Not answerable|price |percentage |time |date |says |unsupported claim|claim check)') as p
+               '; (?=Not answerable|price |percentage |link |time |date |says |unsupported claim|claim check)') as p
        where r.blocked and coalesce(r.block_reason, '') <> '') x
 group by 1
 order by 2 desc;

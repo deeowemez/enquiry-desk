@@ -14,6 +14,9 @@ Sends every test case to the n8n webhook, waits for the workflow to write its
     # Run a few cases first:
     --only t01,t04,t18
 
+    # Another case file (the 24-case gate stays test/enquiries.jsonl; links.jsonl tests the booking link):
+    --cases test/links.jsonl
+
     # Name the run (which models / prompts produced it) so test/compare.py can tell runs apart:
     --label "nova-2-lite all stages"
 
@@ -105,9 +108,9 @@ def wait_for(psql, email, timeout):
     return None
 
 
-def allowed_numbers(psql):
-    """Every number that appears anywhere in the fact table the run is scored against: the live fact_set of the database
-    under test (so an edited price is not flagged as invented), or the seed kb/facts.json if that database has none."""
+def fact_text(psql):
+    """The fact table the run is scored against, as text: the live fact_set of the database under test (so an edited
+    price or link is not flagged as invented), or the seed kb/facts.json if that database has none."""
     text = None
     try:
         out = subprocess.run(shlex.split(psql) + ["-At"], input="select doc::text from fact_set where status = 'live'",
@@ -118,7 +121,38 @@ def allowed_numbers(psql):
         pass
     if text is None:
         text = (ROOT / "kb" / "facts.json").read_text()
+    return text
+
+
+def allowed_numbers(text):
+    """Every number that appears anywhere in the fact table."""
     return set(re.findall(r"\d+(?:\.\d+)?", text))
+
+
+# Same rule as the workflow's `validate claims`: a link in a reply must be in the fact table.
+LINK_RE = re.compile(r"""\bhttps?://[^\s<>()"'“”]+|\bwww\.[^\s<>()"'“”]+|(?<![@\w./-])(?:[a-z0-9-]+\.)+"""
+                     r"""(?:com|net|org|io|co|uk|hk|sg|me|app|ly|us)\b(?:/[^\s<>()"'“”]*)?""", re.I)
+
+
+def link_key(u):
+    u = re.sub(r"^https?://", "", u, flags=re.I)
+    u = re.sub(r"^www\.", "", u, flags=re.I)
+    return re.sub(r"""[/.,;:!?)\]'"”’]+$""", "", u).lower()
+
+
+def fact_links(text):
+    return {link_key(u) for u in re.findall(r'https?://[^\s"]+', text, re.I)}
+
+
+def invented_links(reply, allowed):
+    return sorted({m.group(0) for m in LINK_RE.finditer(reply or "") if link_key(m.group(0)) not in allowed})
+
+
+def booking_link(text):
+    try:
+        return (json.loads(text).get("booking") or {}).get("link")
+    except (ValueError, AttributeError):
+        return None
 
 
 def invented_prices(reply, allowed):
@@ -139,6 +173,8 @@ def main():
                     help="name for this run, stored in the results file (e.g. the model set)")
     ap.add_argument("--psql", required=True, help="command that opens psql on the right database")
     ap.add_argument("--only", help="comma-separated case ids, e.g. t01,t18")
+    ap.add_argument("--cases", default=str(HERE / "enquiries.jsonl"),
+                    help="case file (default test/enquiries.jsonl, the 24-case gate)")
     ap.add_argument("--delay", type=float, default=6,
                     help="seconds between cases (free tier rate-limits; default 6)")
     ap.add_argument("--timeout", type=float, default=120,
@@ -147,7 +183,7 @@ def main():
                     help="fail if category accuracy is below this, e.g. 0.85")
     args = ap.parse_args()
 
-    cases = [json.loads(l) for l in (HERE / "enquiries.jsonl").read_text().splitlines() if l.strip()]
+    cases = [json.loads(l) for l in pathlib.Path(args.cases).read_text().splitlines() if l.strip()]
     if args.only:
         want = {x.strip() for x in args.only.split(",")}
         cases = [c for c in cases if c["id"] in want]
@@ -155,7 +191,8 @@ def main():
         sys.exit("No matching cases.")
 
     run = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    allowed = allowed_numbers(args.psql)
+    facts = fact_text(args.psql)
+    allowed, links, book = allowed_numbers(facts), fact_links(facts), booking_link(facts)
     results = []
 
     print(f"Run {run} — {len(cases)} cases, {args.delay:.0f}s apart" +
@@ -197,11 +234,15 @@ def main():
             if "language" in exp:
                 r["language_ok"] = (got["language"] or "")[:2].lower() == exp["language"][:2].lower()
 
-            if got["action"]:
+            if got["action"] and "action" in exp:
                 r["action_ok"] = got["action"] == exp["action"]
 
             if got["reply"]:
                 r["invented_prices"] = invented_prices(got["reply"], allowed)
+                r["invented_links"] = invented_links(got["reply"], links)
+
+            if "booking_link" in exp and book:     # expected: the booking link is (true) or isn't (false) in the reply
+                r["link_ok"] = (link_key(book) in (got["reply"] or "").lower()) == exp["booking_link"]
 
             notes = []
             if r.get("safety_ok") is False:
@@ -212,6 +253,10 @@ def main():
                 notes.append(f"lang {got['language']}")
             if r.get("invented_prices"):
                 notes.append(f"invented £{r['invented_prices']}")
+            if r.get("invented_links"):
+                notes.append(f"invented link {r['invented_links']}")
+            if r.get("link_ok") is False:
+                notes.append("booking link " + ("missing" if exp["booking_link"] else "unexpected"))
             flags = ",".join(sorted(real_flags(got["safety_flags"]))) or "-"
             conf = f"{got['confidence']:.2f}" if got["confidence"] is not None else ""
             print(f"{case['id']:4} {exp['category']:24} {got['category']:24} "
@@ -233,6 +278,8 @@ def main():
     act = rate("action_ok")
     with_reply = [r for r in scored if "invented_prices" in r]
     invented = sum(1 for r in with_reply if r["invented_prices"])
+    inv_links = sum(1 for r in with_reply if r.get("invented_links"))
+    link = rate("link_ok")
     costs = [r["got"]["cost_usd"] for r in scored]
 
     print("\n" + "=" * 100)
@@ -242,6 +289,10 @@ def main():
           "Action accuracy     not scored yet — `action` is written in session 2")
     print(f"Invented prices     {invented}/{len(with_reply)} replies" if with_reply else
           "Invented prices     not scored yet — replies aren't stored in the `reply` table")
+    if with_reply:
+        print(f"Invented links      {inv_links}/{len(with_reply)} replies")
+    if link[1]:
+        print(f"Booking link        {link[0]}/{link[1]} as expected")
     print(f"Mean cost/enquiry   ${sum(costs) / len(costs):.6f}" if costs else "Mean cost/enquiry   —")
     failed = sum(1 for r in results if r.get("verdict") == "failed")
     missing = len(results) - len(scored) - failed

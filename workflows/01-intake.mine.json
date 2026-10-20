@@ -17,8 +17,8 @@
         0
       ],
       "notesInFlow": true,
-      "webhookId": "b854dd39-12ea-41d3-be84-6a0cfd74b0c2",
-      "notes": "POST /enquiry. Answers via Respond nodes: 400 bad email, 202 received (+ id) once saved, 200 duplicate"
+      "notes": "POST /enquiry. Answers via Respond nodes: 400 bad email, 202 received (+ id) once saved, 200 duplicate",
+      "webhookId": "b854dd39-12ea-41d3-be84-6a0cfd74b0c2"
     },
     {
       "parameters": {
@@ -767,7 +767,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// The claim validator. Every price, percentage, time and date in the reply must exist in the fact\n// table. Pure code - no model - so it can't be talked out of it.\nconst facts = $('facts').first().json.facts;\nconst flat = JSON.stringify(facts);\n\nconst prices = new Set([\n  facts.pricing.subscription_per_subject_per_month,\n  facts.pricing.dropin_single_lesson,\n  facts.pricing.trial.price,\n  ...facts.admissions_support.map(a => a.price)\n].map(Number));\n\nconst MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];\nconst MONTH_RE = '(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)';\nconst md = (m, d) => String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');\nconst verified   = new Set(facts.deadlines.filter(d => d.verified).map(d => d.date.slice(5)));\nconst unverified = new Set(facts.deadlines.filter(d => !d.verified).map(d => d.date.slice(5)));\n\n// Times: every HH:MM in the facts, plus lesson times converted to UTC (-8h) and UK summer time (-7h)\nconst mins = (h, m) => ((h * 60 + m) % 1440 + 1440) % 1440;\nconst times = new Set((flat.match(/\\b\\d{2}:\\d{2}\\b/g) || []).map(t => mins(+t.slice(0, 2), +t.slice(3))));\nfor (const s of facts.lesson_schedule.slots)\n  for (const t of [s.start, s.end])\n    for (const off of [-8, -7]) times.add(mins(+t.slice(0, 2) + off, +t.slice(3)));\n\nfunction check(text) {\n  const problems = [];\n  // money: £95, GBP 95, $95, HK$95, 95 pounds, 95英鎊\n  const money = [\n    ...text.matchAll(/(?:£|\\bGBP\\s?|US\\$|HK\\$|S\\$|\\$|\\bRM\\s?)\\s?(\\d+(?:\\.\\d{1,2})?)/gi),\n    ...text.matchAll(/(\\d+(?:\\.\\d{1,2})?)\\s?(?:GBP\\b|pounds?\\b|英鎊|英镑)/gi)\n  ];\n  for (const m of money)\n    if (!prices.has(Number(m[1]))) problems.push('price \"' + m[0].trim() + '\" is not in the fact table');\n  for (const m of text.matchAll(/\\d+(?:\\.\\d+)?\\s?%/g))\n    problems.push('percentage \"' + m[0] + '\" is not in the fact table');\n  // times: 18:00, 6pm, 6:30 pm\n  for (const m of text.matchAll(/\\b(\\d{1,2})(?::(\\d{2}))?\\s?(am|pm)\\b|\\b(\\d{1,2}):(\\d{2})\\b/gi)) {\n    let h, mi;\n    if (m[3]) { h = (+m[1] % 12) + (m[3].toLowerCase() === 'pm' ? 12 : 0); mi = +(m[2] ?? 0); }\n    else { h = +m[4]; mi = +m[5]; }\n    if (h > 23 || mi > 59) continue;\n    if (!times.has(mins(h, mi))) problems.push('time \"' + m[0].trim() + '\" is not in the fact table');\n  }\n  // dates: 15 October, October 15th, 2026-10-15\n  const dates = [];\n  for (const m of text.matchAll(new RegExp('\\\\b(\\\\d{1,2})(?:st|nd|rd|th)?\\\\s+' + MONTH_RE + '\\\\b', 'gi')))\n    dates.push([m[0], MONTHS.indexOf(m[2].toLowerCase().slice(0, 3)) + 1, +m[1]]);\n  for (const m of text.matchAll(new RegExp('\\\\b' + MONTH_RE + '\\\\s+(\\\\d{1,2})(?:st|nd|rd|th)?\\\\b', 'gi')))\n    dates.push([m[0], MONTHS.indexOf(m[1].toLowerCase().slice(0, 3)) + 1, +m[2]]);\n  for (const m of text.matchAll(/\\b20\\d{2}-(\\d{2})-(\\d{2})\\b/g)) dates.push([m[0], +m[1], +m[2]]);\n  for (const [raw, mo, d] of dates) {\n    if (d < 1 || d > 31) continue;\n    const k = md(mo, d);\n    if (unverified.has(k)) problems.push('date \"' + raw + '\" is UNVERIFIED in the fact table');\n    else if (!verified.has(k)) problems.push('date \"' + raw + '\" is not in the fact table');\n  }\n  return [...new Set(problems)];\n}\n\n// Availability contradictions (deterministic backstop for the claim check): a sentence that names a\n// subject marked available: true AND says it is unavailable / not offered / not part of something.\n// The verifier caught these most of the time; code catches them every time.\n// Availability wording only. Not \"don't offer\": \"we don't offer weekday slots for GCSE Maths\" is a true\n// statement about SLOTS that names an available subject.\nconst NEG = /\\b(not (currently )?(available|part of|included|bookable)|isn['’]t (currently )?(available|part of|included|bookable)|unavailable|no longer (available|offered))\\b/i;\nfunction nameVariants(name) {                       // \"Biology A-Level\" -> also \"A-Level Biology\", \"A Level Biology\"...\n  const [subj, ...rest] = name.split(' '); const lvl = rest.join(' ');\n  const v = [name, lvl + ' ' + subj];\n  return [...new Set(v.flatMap(x => [x, x.replace('A-Level', 'A Level'), x.replace('A-Level', 'A level')]))];\n}\nfunction availabilityProblems(text, subjects) {\n  const problems = [];\n  const sentences = text.split(/(?<=[.!?。！？])\\s+|\\n+/);\n  for (const s of subjects.filter(x => x.available === true)) {\n    const re = new RegExp('\\\\b(' + nameVariants(s.name).map(v => v.replace(/[-]/g, '\\\\-')).join('|') + ')\\\\b', 'i');\n    for (const sent of sentences)\n      if (re.test(sent) && NEG.test(sent))\n        problems.push('says \"' + s.name + '\" is unavailable or excluded, but the fact table lists it as available');\n  }\n  return [...new Set(problems)];\n}\n\n// Problems = numbers (regex) + availability contradictions (code) + free-text claims (verifier model).\nreturn $input.all().map(i => {\n  const reply = i.json.draft_reply ?? '';\n  const problems = [...new Set([...check(reply), ...availabilityProblems(reply, facts.subjects),\n                               ...(i.json.claim_problems ?? [])])];\n  const blocked = problems.length > 0;\n  return { json: { ...i.json,\n    validated: true,\n    reply_blocked: blocked,\n    block_reason: blocked ? problems.join('; ') : '',\n    action: blocked ? 'blocked' : i.json.action\n  }};\n});"
+        "jsCode": "// The claim validator. Every price, percentage, time and date in the reply must exist in the fact\n// table. Pure code - no model - so it can't be talked out of it.\nconst facts = $('facts').first().json.facts;\nconst flat = JSON.stringify(facts);\n\nconst prices = new Set([\n  facts.pricing.subscription_per_subject_per_month,\n  facts.pricing.dropin_single_lesson,\n  facts.pricing.trial.price,\n  ...facts.admissions_support.map(a => a.price)\n].map(Number));\n\nconst MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];\nconst MONTH_RE = '(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)';\nconst md = (m, d) => String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');\nconst verified   = new Set(facts.deadlines.filter(d => d.verified).map(d => d.date.slice(5)));\nconst unverified = new Set(facts.deadlines.filter(d => !d.verified).map(d => d.date.slice(5)));\n\n// Times: every HH:MM in the facts, plus lesson times converted to UTC (-8h) and UK summer time (-7h)\nconst mins = (h, m) => ((h * 60 + m) % 1440 + 1440) % 1440;\nconst times = new Set((flat.match(/\\b\\d{2}:\\d{2}\\b/g) || []).map(t => mins(+t.slice(0, 2), +t.slice(3))));\nfor (const s of facts.lesson_schedule.slots)\n  for (const t of [s.start, s.end])\n    for (const off of [-8, -7]) times.add(mins(+t.slice(0, 2) + off, +t.slice(3)));\n\nfunction check(text) {\n  const problems = [];\n  // money: £95, GBP 95, $95, HK$95, 95 pounds, 95英鎊\n  const money = [\n    ...text.matchAll(/(?:£|\\bGBP\\s?|US\\$|HK\\$|S\\$|\\$|\\bRM\\s?)\\s?(\\d+(?:\\.\\d{1,2})?)/gi),\n    ...text.matchAll(/(\\d+(?:\\.\\d{1,2})?)\\s?(?:GBP\\b|pounds?\\b|英鎊|英镑)/gi)\n  ];\n  for (const m of money)\n    if (!prices.has(Number(m[1]))) problems.push('price \"' + m[0].trim() + '\" is not in the fact table');\n  for (const m of text.matchAll(/\\d+(?:\\.\\d+)?\\s?%/g))\n    problems.push('percentage \"' + m[0] + '\" is not in the fact table');\n  // times: 18:00, 6pm, 6:30 pm\n  for (const m of text.matchAll(/\\b(\\d{1,2})(?::(\\d{2}))?\\s?(am|pm)\\b|\\b(\\d{1,2}):(\\d{2})\\b/gi)) {\n    let h, mi;\n    if (m[3]) { h = (+m[1] % 12) + (m[3].toLowerCase() === 'pm' ? 12 : 0); mi = +(m[2] ?? 0); }\n    else { h = +m[4]; mi = +m[5]; }\n    if (h > 23 || mi > 59) continue;\n    if (!times.has(mins(h, mi))) problems.push('time \"' + m[0].trim() + '\" is not in the fact table');\n  }\n  // dates: 15 October, October 15th, 2026-10-15\n  const dates = [];\n  for (const m of text.matchAll(new RegExp('\\\\b(\\\\d{1,2})(?:st|nd|rd|th)?\\\\s+' + MONTH_RE + '\\\\b', 'gi')))\n    dates.push([m[0], MONTHS.indexOf(m[2].toLowerCase().slice(0, 3)) + 1, +m[1]]);\n  for (const m of text.matchAll(new RegExp('\\\\b' + MONTH_RE + '\\\\s+(\\\\d{1,2})(?:st|nd|rd|th)?\\\\b', 'gi')))\n    dates.push([m[0], MONTHS.indexOf(m[1].toLowerCase().slice(0, 3)) + 1, +m[2]]);\n  for (const m of text.matchAll(/\\b20\\d{2}-(\\d{2})-(\\d{2})\\b/g)) dates.push([m[0], +m[1], +m[2]]);\n  for (const [raw, mo, d] of dates) {\n    if (d < 1 || d > 31) continue;\n    const k = md(mo, d);\n    if (unverified.has(k)) problems.push('date \"' + raw + '\" is UNVERIFIED in the fact table');\n    else if (!verified.has(k)) problems.push('date \"' + raw + '\" is not in the fact table');\n  }\n  return [...new Set(problems)];\n}\n\n// Availability contradictions (deterministic backstop for the claim check): a sentence that names a\n// subject marked available: true AND says it is unavailable / not offered / not part of something.\n// The verifier caught these most of the time; code catches them every time.\n// Availability wording only. Not \"don't offer\": \"we don't offer weekday slots for GCSE Maths\" is a true\n// statement about SLOTS that names an available subject.\nconst NEG = /\\b(not (currently )?(available|part of|included|bookable)|isn['’]t (currently )?(available|part of|included|bookable)|unavailable|no longer (available|offered))\\b/i;\nfunction nameVariants(name) {                       // \"Biology A-Level\" -> also \"A-Level Biology\", \"A Level Biology\"...\n  const [subj, ...rest] = name.split(' '); const lvl = rest.join(' ');\n  const v = [name, lvl + ' ' + subj];\n  return [...new Set(v.flatMap(x => [x, x.replace('A-Level', 'A Level'), x.replace('A-Level', 'A level')]))];\n}\nfunction availabilityProblems(text, subjects) {\n  const problems = [];\n  const sentences = text.split(/(?<=[.!?。！？])\\s+|\\n+/);\n  for (const s of subjects.filter(x => x.available === true)) {\n    const re = new RegExp('\\\\b(' + nameVariants(s.name).map(v => v.replace(/[-]/g, '\\\\-')).join('|') + ')\\\\b', 'i');\n    for (const sent of sentences)\n      if (re.test(sent) && NEG.test(sent))\n        problems.push('says \"' + s.name + '\" is unavailable or excluded, but the fact table lists it as available');\n  }\n  return [...new Set(problems)];\n}\n\n// Links: every link in the reply must be in the fact table, so a model can't invent a payment, Zoom or booking link.\nconst linkKey = u => u.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/[\\/.,;:!?)\\]'\"”’]+$/, '').toLowerCase();\nconst LINK_RE = /\\bhttps?:\\/\\/[^\\s<>()\"'“”]+|\\bwww\\.[^\\s<>()\"'“”]+|(?<![@\\w.\\/-])(?:[a-z0-9-]+\\.)+(?:com|net|org|io|co|uk|hk|sg|me|app|ly|us)\\b(?:\\/[^\\s<>()\"'“”]*)?/gi;\nfunction linkProblems(text, factText) {\n  const allowed = new Set((factText.match(/https?:\\/\\/[^\\s\"]+/gi) || []).map(linkKey));\n  const problems = [];\n  for (const m of text.matchAll(LINK_RE))\n    if (!allowed.has(linkKey(m[0]))) problems.push('link \"' + m[0].replace(/[.,;:!?)]+$/, '') + '\" is not in the fact table');\n  return [...new Set(problems)];\n}\n\n// Problems = numbers (regex) + availability contradictions (code) + links (code) + free-text claims (verifier model).\nreturn $input.all().map(i => {\n  const reply = i.json.draft_reply ?? '';\n  const problems = [...new Set([...check(reply), ...availabilityProblems(reply, facts.subjects), ...linkProblems(reply, flat),\n                               ...(i.json.claim_problems ?? [])])];\n  const blocked = problems.length > 0;\n  return { json: { ...i.json,\n    validated: true,\n    reply_blocked: blocked,\n    block_reason: blocked ? problems.join('; ') : '',\n    action: blocked ? 'blocked' : i.json.action\n  }};\n});"
       },
       "id": "4760d808-18a6-4d80-b3ed-990c58f271ff",
       "name": "validate claims",
@@ -1133,14 +1133,14 @@
         2096
       ],
       "notesInFlow": true,
-      "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad",
       "credentials": {
         "telegramApi": {
           "id": "f0NSkRcTr0rBgguW",
           "name": "Telegram - alerts bot"
         }
       },
-      "notes": "Category + action + Open review link. NO customer data in Telegram. Link works on the tailnet only"
+      "notes": "Category + action + Open review link. NO customer data in Telegram. Link works on the tailnet only",
+      "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad"
     },
     {
       "parameters": {
@@ -1246,7 +1246,6 @@
         2304
       ],
       "notesInFlow": true,
-      "webhookId": "8c98dac3-2ade-4a78-b9d8-08a131c2e60e",
       "credentials": {
         "gmailOAuth2": {
           "id": "CJMeQj0HoOGHJp4E",
@@ -1254,7 +1253,8 @@
         }
       },
       "onError": "continueRegularOutput",
-      "notes": "DRAFT only, addressed to the customer. Nothing is ever sent: a person presses Send in Gmail. If Gmail fails the enquiry is unaffected (see record draft)"
+      "notes": "DRAFT only, addressed to the customer. Nothing is ever sent: a person presses Send in Gmail. If Gmail fails the enquiry is unaffected (see record draft)",
+      "webhookId": "8c98dac3-2ade-4a78-b9d8-08a131c2e60e"
     },
     {
       "parameters": {
@@ -1381,6 +1381,19 @@
       "notes": "Thread only if Gmail says this sender wrote that message; otherwise a fresh draft",
       "parameters": {
         "jsCode": "// Draft into the customer's Gmail thread only when Gmail confirms the message exists, sits in that thread and was\n// sent by the enquiry's address. Anything else (message gone, forged ids, a different sender) gives a fresh,\n// unthreaded draft: the reply still reaches the right person, it just doesn't join a thread it can't vouch for.\nconst row = $('prepare row').first().json;\nconst m = $input.first()?.json ?? {};\nconst from = String(m.From ?? m.from ?? '');\nconst address = (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();\nconst ok = !m.error && m.threadId === row.gmail_thread_id && address === String(row.from_email).toLowerCase();\nreturn [{ json: { thread_id: ok ? row.gmail_thread_id : '', thread_ok: ok,\n                  thread_note: ok ? 'threaded' : (m.error ? 'original not found' : 'sender or thread did not match') } }];"
+      }
+    },
+    {
+      "id": "a852333a-a5b2-46d0-acaf-a8cd81f30b09",
+      "name": "add booking link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3360,
+        992
+      ],
+      "parameters": {
+        "jsCode": "// Booking link: code, not the model, adds the one link a parent needs, taken from the fact table (booking.link).\n// Only trial bookings that cleared or got a clarifying question; never escalations or blocked replies. The link was checked\n// as a fact, so adding it after `validate claims` can't add an unchecked claim.\nconst link = $('facts').first().json.facts?.booking?.link;\nconst key = u => String(u).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n// The line goes just above the sign-off (\"Best regards,\\nMeridian Tutors\"), or at the end if there is none.\nconst SIGN_OFF = /^(?:(?:best|kind|warm|warmest|many)\\s+)?(?:regards|wishes|thanks)[,.!]?$|^(?:thank you|thanks again|(?:yours\\s+)?sincerely|cheers|best|all the best)[,.!]?$/i;\nconst withLink = (reply, line) => {\n  const paras = reply.trimEnd().split(/\\n\\s*\\n/);\n  const first = p => p.trim().split('\\n')[0].trim();\n  let at = -1;\n  if (SIGN_OFF.test(first(paras[paras.length - 1]))) at = paras.length - 1;\n  else if (paras.length > 1 && SIGN_OFF.test(first(paras[paras.length - 2])) && paras[paras.length - 1].trim().split('\\n').length <= 2) at = paras.length - 2;\n  if (at < 1) return paras.join('\\n\\n') + '\\n\\n' + line;\n  paras.splice(at, 0, line);\n  return paras.join('\\n\\n');\n};\nreturn $input.all().map(i => {\n  const p = i.json;\n  const reply = p.draft_reply ?? '';\n  const wanted = !!link && p.classification?.category === 'trial_booking' && ['auto_send', 'clarify'].includes(p.action)\n    && !p.reply_blocked && reply.trim() !== '';\n  if (!wanted || reply.toLowerCase().includes(key(link))) return { json: { ...p, booking_link_added: false } };\n  return { json: { ...p, draft_reply: withLink(reply, 'You can book your free trial here: ' + link), booking_link_added: true } };\n});"
       }
     }
   ],
@@ -1820,7 +1833,7 @@
       "main": [
         [
           {
-            "node": "to record",
+            "node": "add booking link",
             "type": "main",
             "index": 0
           }
@@ -1928,6 +1941,17 @@
         [
           {
             "node": "create gmail draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "add booking link": {
+      "main": [
+        [
+          {
+            "node": "to record",
             "type": "main",
             "index": 0
           }

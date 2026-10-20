@@ -141,22 +141,23 @@ outcomes · green = Postgres · red = errors workflow. Simplified: the exact nod
 
 ## Loom outline
 
-Record in segments, about 5–6 minutes. (Updated 2026-10-18 for Gmail drafts, the console and facts in the database; a fuller cheat
-sheet with paste-ready enquiries, the chaos commands and likely questions is in the project notes.) Post demo enquiries from
-non-`test+` addresses so the Telegram alert and the Gmail draft appear on camera.
+Record in segments, about 5–6 minutes. (Updated 2026-10-20 for the email channel and the booking link; a fuller cheat sheet with
+the demo emails, the chaos commands and likely questions is in the project notes.) The demos are **real emails** from a separate
+sender account to the business mailbox's plain address (never `+staging`), sent a few minutes before recording because the inbox
+is polled every minute. Only the chaos step posts to the webhook, standing for a website form (`replay.py` re-posts as a form).
 
 | # | Show | Say |
 |---|---|---|
 | 1 | README top / canvas sticky | "UK-staffed tutoring company, customers in UTC+8: the whole Asian day is unstaffed. The company is fictional." |
-| 2 | The four stage frames on the canvas | "Saved first, understood, answered only from facts, checked, recorded. Models read; code decides." |
-| 3 | t01-style enquiry → **202** → console drawer timeline → Gmail Drafts | "Answered in seconds, every claim checked, and it's a draft: a person presses Send." |
-| 4 | t18 (child wellbeing) → Telegram "needs review" → review page | "No AI reply at all. Safety flags beat confidence. No customer text in Telegram." |
-| 5 | t06 → **Blocked** (invented £190) → console *Blocked & why* | "The model invented a bundle price. Code caught it." |
-| 6 | t24 → `prompt_injection` → to a person | "The enquiry is data, never instructions." |
-| 7 | Chaos: archive the live fact set → post → Telegram failure alert, dead letter 1 → restore → `replay.py` | "Failures can't vanish: saved, marked, announced, replayed with one command." |
-| 8 | Console *Facts*: the four steps, open the editor (don't publish) | "The business edits its own facts, but a change can't go live until it passes 24 test cases." |
+| 2 | The gmail adapter, then the four stage frames | "Email is just another way in. Saved first, understood, answered only from facts, checked, recorded. Models read; code decides." |
+| 3 | Trial email (GCSE Chemistry) → console drawer timeline → Gmail: draft **in the customer's thread**, ending with the booking link | "Answered from the facts, every claim checked, the booking link added by code, and it's a draft: a person presses Send." |
+| 4 | Child-wellbeing email → Telegram "needs review" → review page | "No AI reply at all. Safety flags beat confidence. No customer text in Telegram." |
+| 5 | Bundle-price email → **Blocked** (invented £190) → *Blocked & why* → Approve → draft in its thread | "The model invented a bundle price. Code caught it; a person decided." |
+| 6 | Injection email → `prompt_injection` → to a person | "The email is data, never instructions." |
+| 7 | Chaos: archive the live fact set → form post → Telegram failure alert, dead letter 1 → restore → `replay.py` | "Failures can't vanish: saved, marked, announced, replayed with one command." |
+| 8 | Console *Facts*: the four steps, `booking.link`, open the editor (don't publish) | "The business edits its own facts, even the booking link, but a change can't go live until it passes 24 test cases." |
 | 9 | The gate output | "22/24 category, 6/6 safety flags, 23/24 actions, 0 invented claims, about a quarter of a cent each." |
-| 10 | README limits | "Synthetic data, 24 cases, the checker is itself a model, no real inbox yet." |
+| 10 | README limits | "Synthetic data, 24 cases, the checker is itself a model, a test mailbox polled every minute." |
 
 ## Decisions (agent-built on request, 2026-10-10/11)
 

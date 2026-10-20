@@ -406,6 +406,8 @@ blocks the reply if it finds any of these:
 - **Dates** not in the facts, or listed as *unverified*.
 - **An available subject described as unavailable.** This backstop exists because the verifier caught it
   most of the time, and code catches it every time.
+- **A link that isn't in the facts** (`https://…`, `www.…`, or a bare `domain.com/path`; email addresses don't count), so a
+  model can't invent a payment, Zoom or booking link. *(Decision 25, live 2026-10-20.)*
 - Anything `read verify` flagged.
 
 Result: `validated: true`, plus either `reply_blocked: false` (the action stays as it was) or
@@ -440,6 +442,13 @@ reply.
 #### `action = escalate (gate 2)` (Set)
 Reached when `answerable?` was false. Sets `action = "escalate"`, `reply_blocked = true`, and
 `block_reason = "Not answerable from facts: …"`. The draft is kept, so the reviewer has a starting point.
+
+#### `add booking link` (Code) *(decision 25)*
+Between `validate claims` and `to record`. For a **trial booking** that cleared or got a clarifying question (never an
+escalation or a blocked reply), it adds one line taken from the facts: *"You can book your free trial here: <booking.link>"*,
+just above the sign-off ("Best regards, …") when the reply has one as its own paragraph, otherwise at the end.
+**Code adds the link, not the model**, so the link is always the real one. If the model already wrote that exact link, nothing is
+added. The link is a fact, so adding it after the checks can't add an unchecked claim.
 
 ### `to record` (No Operation), the join point
 
@@ -635,7 +644,7 @@ person**.
 
 | Workflow | Production | Staging |
 |---|---|---|
-| **intake** (54 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
+| **intake** (55 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
 | **errors** | `01 Enquiry Desk - errors`, id `BSmcb09mPBarqPjO` (the intake's *Error workflow* setting) | `… (STAGING)`, id `xPopuT81Duh5QlOx` (the staging intake's *Error workflow* setting) |
 | **review** (17 nodes) | `01 Enquiry Desk - review`, `GET /webhook/review` and `POST /webhook/review-act`, id `QQEDcUxU7OJIeNn3` | `… (STAGING)`, `GET /webhook/review-staging` and `POST /webhook/review-act-staging`, id `S7LZWf6J4zNQKSgm` |
 | **gmail** (§8a) | `01 Enquiry Desk - gmail`, id `P9xALtSwImtGEt4w`, everything except `+staging@` mail (created once with `staging.py create-gmail-live --yes`) | `01 Enquiry Desk - gmail (STAGING)`, id `LnJNtyRxXx0u383F`, only `+staging@` mail |

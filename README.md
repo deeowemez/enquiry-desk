@@ -40,8 +40,8 @@ flowchart LR
   E -- otherwise --> F{{draft from facts}}
   F --> G{{verify each claim}}
   I --> G
-  G --> V[validate:<br/>numbers, dates, availability]
-  V -- ok --> R[(record)]
+  G --> V[validate:<br/>numbers, dates, links, availability]
+  V -- ok --> L[booking link from the facts,<br/>trial bookings only] --> R[(record)]
   V -- unsupported claim --> X[blocked] --> R
   H --> R
   R -- "escalated or blocked" --> T[/Telegram link/] --> P[review page:<br/>Approve or Take over]
@@ -58,12 +58,14 @@ Design rules that carry the project:
 3. **Answer only from facts.** The fact table (versioned in the database, `fact_set`) is a fact table, not a search index. Each category sees only its own
    facts, and every fact has a scope (for example, whether a trial applies to a given subject). Facts change only through the staff
    console: a draft is applied to staging, must pass the 24-case test, and only then can be published.
-4. **Check every claim.** Prices, dates and times are checked by regex, availability by code, and every other
+4. **Check every claim.** Prices, dates, times and links are checked by regex, availability by code, and every other
    statement by a second model that must quote its evidence. One unsupported claim makes the reply `blocked`.
 5. **A person handles the risky ones.** Telegram carries a link and no customer data. The review page is private to
    the tailnet.
 6. **Nothing is ever sent automatically.** Every reply that is ready becomes a Gmail *draft* (cleared and clarify
-   replies at once, escalated ones once a person approves); a person reads it and presses Send.
+   replies at once, escalated ones once a person approves); a person reads it and presses Send. A trial booking that is
+   cleared, or gets a clarifying question, ends with the booking link from the fact table, added by code, never written by the model: a link that isn't in
+   the facts blocks the reply.
 7. **Email is just another way in.** A small adapter workflow reads the business inbox (Primary only, skipping
    newsletters, auto-replies and no-reply senders) and posts each email to the same intake, so every check applies.
    The draft lands in the customer's own Gmail thread, but only after Gmail confirms the original message came from
@@ -87,6 +89,7 @@ Nova 2 Lite. I compared Nova Micro, Lite and Pro on `classify`; none beat Nova 2
 |---|---|
 | `test/enquiries.jsonl` | The 24 labelled cases (expected category, action and flags) |
 | `test/score.py` | Posts every case to a production-mode webhook, reads the rows back, prints the scores |
+| `test/links.jsonl` | 5 booking-link cases (`score.py --cases test/links.jsonl`): the link appears where it should, and no invented link ever does |
 | `test/compare.py`, `test/baseline.json` | Tabulates runs; `--check RUN` gates a run against the baseline (safety flags, invented claims, failures, accuracy within 1 case, cost within +25%) |
 | `test/staging.py` | A staging copy of the workflows. Changes are tested there; promoting to the live workflow is a separate, deliberate step with a backup and a rollback |
 | `test/sweep.py` | Runs a model experiment on staging with a lock and a guaranteed restore |

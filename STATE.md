@@ -346,6 +346,26 @@ non-`test+` addresses so the Telegram alert and the Gmail draft appear on camera
     production review page → draft **in the customer's thread** (`thread check`: threaded), `sent_at` empty.
     Known v1 limit: a customer's reply in the thread becomes a new enquiry (follow-ups are *Later*).
 
+25. **A booking link from the facts, appended by code; invented links block a reply** (2026-10-20, **live**). Why:
+    it moves a trial enquiry from "answered" to "booked", and a model must never be the source of a link. The fact table gets
+    `booking.link` (a Cal.com event for the fictional company) and `booking.channels` names it ("the booking link (free trials only)
+    or email"); made through the console (staging v6, published to production as v2). A new node `add booking link` after `validate claims` appends *"You can book
+    your free trial here: <link>"* to **trial bookings that cleared or got a clarifying question** only (never escalations or blocked
+    replies), unless the model already wrote that exact link. `validate claims` gains a **link rule**: any link in the reply
+    (`https://`, `www.`, bare `domain.tld/path`; not email addresses) that isn't in the facts blocks it (`link "…" is not in the fact
+    table`, bucket `invented link` in `stats_block_problem` and the console). `score.py` counts invented links with invented prices
+    (`compare.py` gates both) and checks `booking_link` expectations; `test/links.jsonl` holds 5 link cases (trial → link; clarify →
+    link; "send me the payment link" and "include the Zoom link" → no invented link; worried parent → escalated, no link), kept out
+    of the 24-case gate so the baseline stays comparable. Link regex unit-tested on 10 cases.
+    **Lesson (facts wording moves accuracy):** the first wording of `booking.how` ("Free trial: book online… New subscription: reply…")
+    failed the gate twice (19/24 actions): t04, a plain price question, was blocked in 3 of 5 tries because the model started describing
+    what a subscription includes. With `booking.how` back to the original text, t04 passed 5 of 5 and the gate passed twice (23/24).
+    The code adds the link, so the model doesn't need to be told about it. This is exactly what the facts gate is for.
+    Verified on staging: links cases 5/5 as expected (`20261020-144544`). **Live 2026-10-20:** `stats_block_problem` updated in
+    production, `promote --yes` (2 nodes), facts published, console rebuilt; a live email trial request (GCSE Chemistry) cleared and
+    its draft landed in the thread ending with the link (`thread check`: threaded, `booking_link_added`: true). The line first came after the
+    sign-off; it now goes just above it (paragraph-level match on "Best regards," and similar; exported code checked on 5 shapes).
+
 ## Model strategy (decided 2026-10-14)
 
 - **Nova models only** while the credit is the budget (rule: credits only). Claude is out until a client pays.
@@ -403,7 +423,7 @@ cost a lot. The `apac.` rows are the in-region price; confirm on first use that 
 
 ## Node map
 
-**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 54 nodes incl. stickies)
+**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 55 nodes incl. stickies)
 
 | Stage | Nodes |
 |---|---|
@@ -412,7 +432,7 @@ cost a lot. The `apac.` rows are the in-region price; confirm on first use that 
 | ③ auto_send | `action = auto_send` → `select facts` → `build draft request` → `draft` → `read draft` → `answerable?` → (`build verify request` → `verify` → `read verify` → `validate claims` \| `action = escalate (gate 2)`) |
 | ③ clarify | `action = clarify` → `build clarify request` → `clarify` → `read clarify` → `validate claims` |
 | ③ escalate | `action = escalate` |
-| ③ join | `validate claims`, `action = escalate (gate 2)`, `action = escalate` → `to record` (No Operation) |
+| ③ join | `validate claims` → `add booking link` (decision 25), `action = escalate (gate 2)`, `action = escalate` → `to record` (No Operation) |
 | ④ Record → review | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` → `needs review?` → (`open review` → `notify a human?` → `review alert` \| `draft for cleared?` → `create gmail draft` → `record draft`) |
 
 **Email thread check (decision 24):** the intake adds `from email?` → `get original` → `thread check` between `draft for cleared?` and
@@ -474,6 +494,8 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261018-164314` | 22/24 | 6/6 | 6/6 | 23/24 | 0 | $0.00238 | **live** after promoting `load facts` (decision 22): facts read from the database; passes every gate |
 | `20261018-142648` | 22/24 | 6/6 | 6/6 | 22/24 | 0 | $0.00237 | staging with `is_test` read from the database (decision 19): passes every gate; 0 drafts from scoring traffic |
 | `20261020-123011` | 22/24 | 6/6 | 6/6 | 21/24 | 0 | $0.00240 | staging with the email channel (decision 24): passes every gate; the form path is unchanged |
+| `20261020-063509` / `-063952` | 22/24 | 6/6 | 6/6 | 19/24, 19/24 | 0 | $0.00232 / $0.00211 | staging, booking link with facts **v5**: **fails** (actions). t04 newly blocked: the reworded `booking.how` ("New subscription: …") made pricing replies describe what a subscription includes |
+| `20261020-064619` / `-065019` | 22/24 | 6/6 | 6/6 | 23/24, 23/24 | 0 | $0.00234 | staging, booking link with facts **v6** (`booking.how` back to the original): passes every gate, both runs (console gate) |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)

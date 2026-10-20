@@ -49,7 +49,7 @@ def summarise(path):
         "safety": tally("safety_ok"),
         "slots": tally("slots_ok"),
         "actions": tally("action_ok"),
-        "invented": sum(1 for r in replies if r["invented_prices"]),
+        "invented": sum(1 for r in replies if r["invented_prices"] or r.get("invented_links")),   # prices or links
         "replies": len(replies),
         "failed": len(rows) - len(scored),
         "cost": sum(costs) / len(costs) if costs else 0.0,

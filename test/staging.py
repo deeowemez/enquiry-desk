@@ -20,6 +20,8 @@ builder works on a staging copy, and a person promotes a change to production.
                                            # (refuses during a sweep, or when staging holds a non-default model: --allow-models)
     python3 test/staging.py rollback [review] --yes # put the latest pre-promotion backup back and publish it
     export [review] [--live]  # the review workflow exports to workflows/01-review.staging.json (live: 01-review.json)
+    export gmail [--live]     # the email-channel adapter (Gmail Trigger -> intake webhook) -> workflows/01-gmail.staging.json
+    create-gmail-live [--yes] # a PERSON runs this: create the LIVE email adapter from the staging one, INACTIVE (read-only without --yes)
 
 What differs from production (everything else is a straight copy):
   intake  : webhook path `enquiry-staging`; its error workflow is the staging errors copy;
@@ -198,6 +200,45 @@ def cmd_sync(args):
           f"errors {st['errors']} ({len(e['nodes'])} nodes)")
 
 
+def cmd_create_gmail_live(args):
+    """Create production's email adapter from the staging one. Created inactive: a person switches it on in n8n.
+
+    Differences from staging: the filter takes everything EXCEPT +staging@ mail, it posts to /webhook/enquiry, its error
+    workflow is production's errors (which pages on Telegram), and the name has no (STAGING) suffix.
+    """
+    st = load_state()
+    if not st.get("gmail"):
+        sys.exit("No staging gmail workflow in staging.json.")
+    if st.get("gmail_live"):
+        sys.exit(f"A live gmail workflow already exists ({st['gmail_live']}).")
+    stg = api("GET", f"/workflows/{st['gmail']}")
+    nodes = json.loads(json.dumps(stg["nodes"]))
+    for n in nodes:
+        p = n["parameters"]
+        if n["type"].endswith(".code"):
+            if p["jsCode"].count("const STAGING = true;") != 1:
+                sys.exit("email filter: expected exactly one `const STAGING = true;`")
+            p["jsCode"] = p["jsCode"].replace("const STAGING = true;", "const STAGING = false;")
+        if n["type"].endswith(".httpRequest"):
+            if not str(p.get("url", "")).endswith(f"/webhook/{STAGING_PATH}"):
+                sys.exit(f"to intake: unexpected url {p.get('url')!r}")
+            p["url"] = p["url"][: -len(STAGING_PATH)] + "enquiry"
+    settings = {k: v for k, v in stg["settings"].items() if k in SETTINGS_OK}
+    settings["errorWorkflow"] = PROD["errors"]
+    name = stg["name"].removesuffix(SUFFIX)
+    print(f"would create {name!r} (inactive) from staging {st['gmail']}:")
+    print("  email filter : STAGING = false (takes everything except +staging@ mail)")
+    print("  to intake    : posts to /webhook/enquiry")
+    print(f"  errors       : production errors workflow {PROD['errors']} (Telegram alert on failure)")
+    if "--yes" not in args:
+        print("\nRead-only so far. To create it: create-gmail-live --yes")
+        return
+    w = api("POST", "/workflows", {"name": name, "nodes": nodes, "connections": stg["connections"], "settings": settings})
+    st["gmail_live"] = w["id"]
+    STATE.write_text(json.dumps(st, indent=2) + "\n")
+    print(f"created {w['id']} (inactive). Switch it on in n8n when you are ready; then `export gmail --live`.")
+
+
 def cmd_export(args):
     """Write the staging intake workflow to workflows/ (the repo rule: API changes must reach git).
 
@@ -205,17 +246,21 @@ def cmd_export(args):
     This is also how a change gets promoted: a person imports this file into the live workflow, then runs `sync`.
     """
     live = "--live" in args
-    kind = "review" if "review" in args else "intake"
+    kind = "review" if "review" in args else "gmail" if "gmail" in args else "intake"
     st = load_state()
+    live_ids = {**PROD, **({"gmail": st["gmail_live"]} if st.get("gmail_live") else {})}
+    if live and kind not in live_ids:
+        sys.exit(f"There is no live {kind} workflow yet.")
     if not live and not st.get(kind):
         sys.exit(f"No staging {kind} workflow yet. Run `create`{'-review' if kind == 'review' else ''} first.")
-    w = api("GET", f"/workflows/{PROD[kind] if live else st[kind]}")
+    w = api("GET", f"/workflows/{live_ids[kind] if live else st[kind]}")
     for n in w["nodes"]:
         if n["type"].endswith(".telegram") and "chatId" in n["parameters"]:
             n["parameters"]["chatId"] = "{{ALERT_CHAT_ID}}"
     out = {k: w[k] for k in ("name", "nodes", "pinData", "connections", "settings", "meta") if k in w}
     names = {("intake", True): "01-intake.mine.json", ("intake", False): "01-intake.staging.json",
-             ("review", True): "01-review.json", ("review", False): "01-review.staging.json"}
+             ("review", True): "01-review.json", ("review", False): "01-review.staging.json",
+             ("gmail", True): "01-gmail.json", ("gmail", False): "01-gmail.staging.json"}
     path = HERE.parent / "workflows" / names[(kind, live)]
     path.write_text(json.dumps(out, indent=2, ensure_ascii=False) + "\n")
     print(f"wrote {path.relative_to(HERE.parent)} ({len(w['nodes'])} nodes)")
@@ -432,7 +477,7 @@ def cmd_status(args):
 
 
 if __name__ == "__main__":
-    cmds = {"create": cmd_create, "create-review": cmd_create_review, "sync": cmd_sync, "status": cmd_status, "export": cmd_export, "models": cmd_models,
+    cmds = {"create": cmd_create, "create-review": cmd_create_review, "create-gmail-live": cmd_create_gmail_live, "sync": cmd_sync, "status": cmd_status, "export": cmd_export, "models": cmd_models,
             "set-model": cmd_set_model, "use-db": cmd_use_db, "promote": cmd_promote, "rollback": cmd_rollback}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         sys.exit(__doc__)

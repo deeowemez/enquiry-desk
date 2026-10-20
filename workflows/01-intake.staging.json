@@ -22,7 +22,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Requires NODE_FUNCTION_ALLOW_BUILTIN=crypto on the n8n container.\nconst crypto = require('crypto');\n\nreturn $input.all().map(item => {\n  // Webhook payloads arrive nested under .body\n  const b = item.json.body ?? item.json;\n  const received = new Date().toISOString();\n  const body = String(b.message ?? '').replace(/<[^>]*>/g, '').trim();\n  // Email is required: it's how we reply, and it's part of the dedupe key\n  const email = String(b.email ?? '').trim().toLowerCase();\n  // Invalid email: don't throw - flag it, so `valid email?` can answer the sender with a 400.\n  // (Bad input isn't a system failure: no dead letter, no alert.)\n  if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) {\n    return { json: { valid: false, error: 'A valid email address is required so we can reply.' } };\n  }\n\n  return { json: {\n    valid: true,\n    id: crypto.randomUUID(),\n    source: 'form',\n    external_key: crypto.createHash('sha256').update(`${email}|${body}|${received.slice(0, 10)}`).digest('hex'),\n    received_at: received,\n    from_email: email,\n    from_name: b.name ?? null,\n    subject: b.subject ?? null,\n    body\n  }};\n});"
+        "jsCode": "// Requires NODE_FUNCTION_ALLOW_BUILTIN=crypto on the n8n container.\nconst crypto = require('crypto');\n\nreturn $input.all().map(item => {\n  // Webhook payloads arrive nested under .body\n  const b = item.json.body ?? item.json;\n  const received = new Date().toISOString();\n  const body = String(b.message ?? '').replace(/<[^>]*>/g, '').trim();\n  // Email is required: it's how we reply, and it's part of the dedupe key\n  const email = String(b.email ?? '').trim().toLowerCase();\n  // Invalid email: don't throw - flag it, so `valid email?` can answer the sender with a 400.\n  // (Bad input isn't a system failure: no dead letter, no alert.)\n  if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) {\n    return { json: { valid: false, error: 'A valid email address is required so we can reply.' } };\n  }\n\n  // Email channel (the Gmail adapter workflow): Gmail's own ids are the dedupe anchor, so a re-poll is a duplicate\n  // but two different emails with the same words are not. The ids are only hints here: the thread is used for the\n  // reply draft only after `thread check` confirms with Gmail that this sender wrote that message.\n  const gmailId = /^[0-9a-f]{8,32}$/i;\n  const isEmail = b.channel === 'email' && gmailId.test(String(b.gmail_message_id ?? ''));\n  const gmail_message_id = isEmail ? String(b.gmail_message_id) : null;\n  const gmail_thread_id = isEmail && gmailId.test(String(b.gmail_thread_id ?? '')) ? String(b.gmail_thread_id) : null;\n\n  return { json: {\n    valid: true,\n    id: crypto.randomUUID(),\n    source: isEmail ? 'email' : 'form',\n    external_key: isEmail\n      ? crypto.createHash('sha256').update(`gmail|${gmail_message_id}`).digest('hex')\n      : crypto.createHash('sha256').update(`${email}|${body}|${received.slice(0, 10)}`).digest('hex'),\n    gmail_message_id,\n    gmail_thread_id,\n    received_at: received,\n    from_email: email,\n    from_name: b.name ?? null,\n    subject: b.subject ?? null,\n    body\n  }};\n});"
       },
       "id": "cfb67eb8-4ef8-40a3-8f8f-382bce818792",
       "name": "normalise",
@@ -178,7 +178,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Every branch arrives here: escalate (no draft), escalate-at-gate-2 / blocked (draft kept, blocked),\n// clarify and auto_send (validated draft).\nreturn $input.all().map(item => {\n  const p = item.json;\n  const c = p.classification;\n  const classifyCost = p.classify_cost_usd ?? 0;\n  const draftCost = p.draft_cost_usd ?? 0;\n  const verifyCost = p.verify_cost_usd ?? 0;\n\n  return { json: {\n    id: p.id,\n    source: p.source,\n    external_key: p.external_key,\n    received_at: p.received_at,\n    from_email: p.from_email,\n    facts_version: $('facts').first().json.facts_version ?? null,   // which fact_set version answered this enquiry (read from `facts`, like every node that uses the facts)\n    is_test: p.is_test === true,                // scoring traffic (database-defined): no alert, no Gmail draft\n    subject: p.subject,\n    body: p.body,\n    category: c.category,\n    confidence: c.confidence,\n    language: c.language,\n    safety_flags: JSON.stringify(c.safety_flags ?? []),\n    missing_slots: JSON.stringify(c.missing_slots ?? []),\n    action: p.action,\n    draft_reply: p.draft_reply ?? '',\n    draft_stage: p.draft_stage ?? '',           // 'draft' | 'clarify' | '' (no model call)\n    answerable: p.answerable ?? null,\n    unanswered: p.unanswered ?? '',\n    validated: p.validated === true,\n    reply_blocked: p.reply_blocked === true,\n    block_reason: p.block_reason ?? '',\n    grounded_on: JSON.stringify(Object.keys(p.selected_facts ?? {})),\n    draft_tokens: p.draft_tokens ?? null,\n    classify_model: p.classify_model,\n    draft_model: p.draft_model ?? null,\n    verify_model: p.verify_model ?? null,\n    classify_cost_usd: classifyCost,\n    draft_cost_usd: draftCost,\n    verify_cost_usd: verifyCost,\n    total_cost_usd: Number((classifyCost + draftCost + verifyCost).toFixed(6))\n  }};\n});"
+        "jsCode": "// Every branch arrives here: escalate (no draft), escalate-at-gate-2 / blocked (draft kept, blocked),\n// clarify and auto_send (validated draft).\nreturn $input.all().map(item => {\n  const p = item.json;\n  const c = p.classification;\n  const classifyCost = p.classify_cost_usd ?? 0;\n  const draftCost = p.draft_cost_usd ?? 0;\n  const verifyCost = p.verify_cost_usd ?? 0;\n\n  return { json: {\n    id: p.id,\n    source: p.source,\n    gmail_message_id: p.gmail_message_id ?? null,  // email channel only: `thread check` verifies them before a threaded draft\n    gmail_thread_id: p.gmail_thread_id ?? null,\n    external_key: p.external_key,\n    received_at: p.received_at,\n    from_email: p.from_email,\n    facts_version: $('facts').first().json.facts_version ?? null,   // which fact_set version answered this enquiry (read from `facts`, like every node that uses the facts)\n    is_test: p.is_test === true,                // scoring traffic (database-defined): no alert, no Gmail draft\n    subject: p.subject,\n    body: p.body,\n    category: c.category,\n    confidence: c.confidence,\n    language: c.language,\n    safety_flags: JSON.stringify(c.safety_flags ?? []),\n    missing_slots: JSON.stringify(c.missing_slots ?? []),\n    action: p.action,\n    draft_reply: p.draft_reply ?? '',\n    draft_stage: p.draft_stage ?? '',           // 'draft' | 'clarify' | '' (no model call)\n    answerable: p.answerable ?? null,\n    unanswered: p.unanswered ?? '',\n    validated: p.validated === true,\n    reply_blocked: p.reply_blocked === true,\n    block_reason: p.block_reason ?? '',\n    grounded_on: JSON.stringify(Object.keys(p.selected_facts ?? {})),\n    draft_tokens: p.draft_tokens ?? null,\n    classify_model: p.classify_model,\n    draft_model: p.draft_model ?? null,\n    verify_model: p.verify_model ?? null,\n    classify_cost_usd: classifyCost,\n    draft_cost_usd: draftCost,\n    verify_cost_usd: verifyCost,\n    total_cost_usd: Number((classifyCost + draftCost + verifyCost).toFixed(6))\n  }};\n});"
       },
       "id": "4db82172-3ce9-410c-85aa-450bf68bcd44",
       "name": "prepare row",
@@ -808,9 +808,9 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "insert into enquiry (id, source, external_key, received_at, from_email, subject, body, status, n8n_execution_id)\nvalues ($1::uuid, $2, $3, $4::timestamptz, $5, $6, $7, 'received', $8)\non conflict (external_key) do update\n  set status = 'received',\n      n8n_execution_id = excluded.n8n_execution_id,\n      received_at = excluded.received_at\n  where enquiry.status = 'failed'      -- only a FAILED row can be reclaimed (replay); anything else is a duplicate\nreturning id, is_test;",
+        "query": "insert into enquiry (id, source, external_key, received_at, from_email, subject, body, status, n8n_execution_id, gmail_message_id, gmail_thread_id)\nvalues ($1::uuid, $2, $3, $4::timestamptz, $5, $6, $7, 'received', $8, nullif($9, ''), nullif($10, ''))\non conflict (external_key) do update\n  set status = 'received',\n      n8n_execution_id = excluded.n8n_execution_id,\n      received_at = excluded.received_at\n  where enquiry.status = 'failed'      -- only a FAILED row can be reclaimed (replay); anything else is a duplicate\nreturning id, is_test;",
         "options": {
-          "queryReplacement": "={{ [ $json.id, $json.source, $json.external_key, $json.received_at, $json.from_email, $json.subject, $json.body, $execution.id ] }}"
+          "queryReplacement": "={{ [ $json.id, $json.source, $json.external_key, $json.received_at, $json.from_email, $json.subject, $json.body, $execution.id, ($json.gmail_message_id ?? ''), ($json.gmail_thread_id ?? '') ] }}"
         }
       },
       "id": "6e385d03-30d7-4541-b4ee-c473c28eb80f",
@@ -1234,7 +1234,8 @@
         "subject": "={{ 'Re: ' + (($('prepare row').first().json.subject || '').trim() || 'your enquiry to Meridian Tutors') }}",
         "message": "={{ $('prepare row').first().json.draft_reply }}",
         "options": {
-          "sendTo": "={{ $('prepare row').first().json.from_email }}"
+          "sendTo": "={{ $('prepare row').first().json.from_email }}",
+          "threadId": "={{ $('thread check').isExecuted ? $('thread check').first().json.thread_id : '' }}"
         }
       },
       "id": "dee71577-fd57-4110-9cd5-4a0dceee273f",
@@ -1242,7 +1243,7 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        1344,
+        2016,
         2304
       ],
       "notesInFlow": true,
@@ -1269,7 +1270,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1568,
+        2240,
         2304
       ],
       "alwaysOutputData": true,
@@ -1305,6 +1306,83 @@
       "notesInFlow": true,
       "notes": "The fact table lives in the database (fact_set), versioned. This reads the one live version; the staging workflow reads the staging database's, production reads production's. No live row = Always Output Data still passes an empty item, so the next node runs and throws, the run fails loudly and the errors workflow takes over (the enquiry is already saved)",
       "alwaysOutputData": true
+    },
+    {
+      "id": "c1dd79a6-3e6f-4c97-99f0-2037967bc15a",
+      "name": "from email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1344,
+        2304
+      ],
+      "notesInFlow": true,
+      "notes": "Came in by email with a Gmail message id? Then check the thread before drafting into it",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "from-email",
+              "leftValue": "={{ $('prepare row').first().json.source === 'email' && !!$('prepare row').first().json.gmail_message_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "227aad79-494c-4cfc-b2c0-39f4cf9ad410",
+      "name": "get original",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1568,
+        2144
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CJMeQj0HoOGHJp4E",
+          "name": "Gmail - drafts"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notesInFlow": true,
+      "notes": "Read the customer's message from Gmail itself (the webhook's ids are only hints)",
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $('prepare row').first().json.gmail_message_id }}",
+        "simple": true
+      },
+      "webhookId": "e8b9d546-2c94-4136-9f90-749ad7ee61b7"
+    },
+    {
+      "id": "48b42f05-749a-469d-b601-eec241728952",
+      "name": "thread check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        2144
+      ],
+      "notesInFlow": true,
+      "notes": "Thread only if Gmail says this sender wrote that message; otherwise a fresh draft",
+      "parameters": {
+        "jsCode": "// Draft into the customer's Gmail thread only when Gmail confirms the message exists, sits in that thread and was\n// sent by the enquiry's address. Anything else (message gone, forged ids, a different sender) gives a fresh,\n// unthreaded draft: the reply still reaches the right person, it just doesn't join a thread it can't vouch for.\nconst row = $('prepare row').first().json;\nconst m = $input.first()?.json ?? {};\nconst from = String(m.From ?? m.from ?? '');\nconst address = (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();\nconst ok = !m.error && m.threadId === row.gmail_thread_id && address === String(row.from_email).toLowerCase();\nreturn [{ json: { thread_id: ok ? row.gmail_thread_id : '', thread_ok: ok,\n                  thread_note: ok ? 'threaded' : (m.error ? 'original not found' : 'sender or thread did not match') } }];"
+      }
     }
   ],
   "pinData": {
@@ -1821,7 +1899,7 @@
       "main": [
         [
           {
-            "node": "create gmail draft",
+            "node": "from email?",
             "type": "main",
             "index": 0
           }
@@ -1845,6 +1923,46 @@
         [
           {
             "node": "facts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "from email?": {
+      "main": [
+        [
+          {
+            "node": "get original",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "create gmail draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get original": {
+      "main": [
+        [
+          {
+            "node": "thread check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "thread check": {
+      "main": [
+        [
+          {
+            "node": "create gmail draft",
             "type": "main",
             "index": 0
           }

@@ -156,7 +156,7 @@
       "notes": "Only a PENDING enquiry with a matching token changes. Approve needs a draft. Logged in run_log. Always outputs (empty = nothing changed)",
       "parameters": {
         "operation": "executeQuery",
-        "query": "with e as (\n  update enquiry\n     set review_status = case when $3 = 'approve' then 'approved' else 'taken_over' end,\n         reviewed_at = now()\n   where id = $1::uuid and review_token = $2 and review_status = 'pending'\n     and ($3 = 'takeover' or ($3 = 'approve' and exists (select 1 from reply where enquiry_id = enquiry.id and body <> '')))\n  returning id, review_status\n), r as (\n  update reply set approved_at = now() where enquiry_id in (select id from e) and $3 = 'approve' returning 1\n), l as (\n  insert into run_log (enquiry_id, stage, status, attempt, error)\n  select id, 'review', 'ok', 1, review_status from e returning 1\n)\nselect e.id, e.review_status,\n       case when e.review_status = 'approved'\n            then (select rp.body from reply rp where rp.enquiry_id = e.id and rp.body <> '' limit 1) end as reply_body,\n       (select q2.from_email from enquiry q2 where q2.id = e.id) as from_email,\n       (select q2.subject from enquiry q2 where q2.id = e.id) as subject\n  from e;",
+        "query": "with e as (\n  update enquiry\n     set review_status = case when $3 = 'approve' then 'approved' else 'taken_over' end,\n         reviewed_at = now()\n   where id = $1::uuid and review_token = $2 and review_status = 'pending'\n     and ($3 = 'takeover' or ($3 = 'approve' and exists (select 1 from reply where enquiry_id = enquiry.id and body <> '')))\n  returning id, review_status\n), r as (\n  update reply set approved_at = now() where enquiry_id in (select id from e) and $3 = 'approve' returning 1\n), l as (\n  insert into run_log (enquiry_id, stage, status, attempt, error)\n  select id, 'review', 'ok', 1, review_status from e returning 1\n)\nselect e.id, e.review_status,\n       case when e.review_status = 'approved'\n            then (select rp.body from reply rp where rp.enquiry_id = e.id and rp.body <> '' limit 1) end as reply_body,\n       (select q2.from_email from enquiry q2 where q2.id = e.id) as from_email,\n       (select q2.subject from enquiry q2 where q2.id = e.id) as subject,\n       (select q2.source from enquiry q2 where q2.id = e.id) as source,\n       (select q2.gmail_message_id from enquiry q2 where q2.id = e.id) as gmail_message_id,\n       (select q2.gmail_thread_id from enquiry q2 where q2.id = e.id) as gmail_thread_id\n  from e;",
         "options": {
           "queryReplacement": "={{ [ $json.id, $json.t, $json.do ] }}"
         }
@@ -265,17 +265,18 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        896,
+        1568,
         500
       ],
       "parameters": {
         "resource": "draft",
         "operation": "create",
-        "subject": "={{ 'Re: ' + (($json.subject || '').trim() || 'your enquiry to Meridian Tutors') }}",
+        "subject": "={{ 'Re: ' + (($('apply decision').first().json.subject || '').trim() || 'your enquiry to Meridian Tutors') }}",
         "emailType": "text",
-        "message": "={{ $json.reply_body }}",
+        "message": "={{ $('apply decision').first().json.reply_body }}",
         "options": {
-          "sendTo": "={{ $json.from_email }}"
+          "sendTo": "={{ $('apply decision').first().json.from_email }}",
+          "threadId": "={{ $('thread check').isExecuted ? $('thread check').first().json.thread_id : '' }}"
         }
       },
       "onError": "continueRegularOutput",
@@ -295,7 +296,7 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1120,
+        1792,
         500
       ],
       "alwaysOutputData": true,
@@ -314,6 +315,83 @@
       },
       "notesInFlow": true,
       "notes": "Records the Gmail draft id, or why there is none. sent_at is never set here"
+    },
+    {
+      "id": "1c63d12f-9d17-4ed2-9203-5508d0e81a03",
+      "name": "from email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        500
+      ],
+      "notesInFlow": true,
+      "notes": "Came in by email with a Gmail message id? Then check the thread before drafting into it",
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "from-email",
+              "leftValue": "={{ $('apply decision').first().json.source === 'email' && !!$('apply decision').first().json.gmail_message_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "53624dfe-fc87-45c9-b273-eafed14fda4f",
+      "name": "get original",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        340
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CJMeQj0HoOGHJp4E",
+          "name": "Gmail - drafts"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true,
+      "notesInFlow": true,
+      "notes": "Read the customer's message from Gmail itself (the webhook's ids are only hints)",
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $('apply decision').first().json.gmail_message_id }}",
+        "simple": true
+      },
+      "webhookId": "ea42211b-d8f0-4cc7-b1b4-6bad383d7ad0"
+    },
+    {
+      "id": "b4a59da5-8ac3-4cbd-a875-fbca62f19228",
+      "name": "thread check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        340
+      ],
+      "notesInFlow": true,
+      "notes": "Thread only if Gmail says this sender wrote that message; otherwise a fresh draft",
+      "parameters": {
+        "jsCode": "// Draft into the customer's Gmail thread only when Gmail confirms the message exists, sits in that thread and was\n// sent by the enquiry's address. Anything else (message gone, forged ids, a different sender) gives a fresh,\n// unthreaded draft: the reply still reaches the right person, it just doesn't join a thread it can't vouch for.\nconst row = $('apply decision').first().json;   // the review flow's row (the intake reads `prepare row`)\nconst m = $input.first()?.json ?? {};\nconst from = String(m.From ?? m.from ?? '');\nconst address = (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();\nconst ok = !m.error && m.threadId === row.gmail_thread_id && address === String(row.from_email).toLowerCase();\nreturn [{ json: { thread_id: ok ? row.gmail_thread_id : '', thread_ok: ok,\n                  thread_note: ok ? 'threaded' : (m.error ? 'original not found' : 'sender or thread did not match') } }];"
+      }
     }
   ],
   "pinData": null,
@@ -410,7 +488,7 @@
       "main": [
         [
           {
-            "node": "create gmail draft",
+            "node": "from email?",
             "type": "main",
             "index": 0
           }
@@ -440,6 +518,46 @@
         [
           {
             "node": "render result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "from email?": {
+      "main": [
+        [
+          {
+            "node": "get original",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "create gmail draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "get original": {
+      "main": [
+        [
+          {
+            "node": "thread check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "thread check": {
+      "main": [
+        [
+          {
+            "node": "create gmail draft",
             "type": "main",
             "index": 0
           }

@@ -30,6 +30,7 @@ to a person, and measure both.
 
 ```mermaid
 flowchart LR
+  Z([email in the inbox]) -- "Gmail adapter, every minute" --> A
   A([POST /enquiry]) --> B[save first<br/>reply 202 + id]
   B --> C{{classify<br/>forced tool call}}
   C --> D[code derives<br/>missing details]
@@ -44,7 +45,7 @@ flowchart LR
   V -- unsupported claim --> X[blocked] --> R
   H --> R
   R -- "escalated or blocked" --> T[/Telegram link/] --> P[review page:<br/>Approve or Take over]
-  P -- approve --> M[Gmail draft<br/>a person sends it]
+  P -- approve --> M[Gmail draft, in the customer's<br/>thread for emails; a person sends it]
   R -- "cleared or question" --> M
 ```
 
@@ -63,7 +64,11 @@ Design rules that carry the project:
    the tailnet.
 6. **Nothing is ever sent automatically.** Every reply that is ready becomes a Gmail *draft* (cleared and clarify
    replies at once, escalated ones once a person approves); a person reads it and presses Send.
-7. **Fail loudly.** A production failure marks the row `failed`, logs it, sends a Telegram alert, and
+7. **Email is just another way in.** A small adapter workflow reads the business inbox (Primary only, skipping
+   newsletters, auto-replies and no-reply senders) and posts each email to the same intake, so every check applies.
+   The draft lands in the customer's own Gmail thread, but only after Gmail confirms the original message came from
+   that sender, so a forged request can't plant a draft in someone else's conversation.
+8. **Fail loudly.** A production failure marks the row `failed`, logs it, sends a Telegram alert, and
    `test/replay.py` re-runs it with one command.
 
 The full node-by-node walkthrough, written for someone new to n8n and including the traps I hit, is in
@@ -102,7 +107,8 @@ alerts, and a Gmail OAuth2 credential for drafts.
 1. Create the tables and the first version of the fact table: `psql … -f schema/schema.sql`, `psql … -f schema/facts.sql`,
    then `node console/scripts/seed-facts.mjs | psql …`.
 2. Start n8n with `NODE_FUNCTION_ALLOW_BUILTIN=crypto` (the normalise step uses Node's `crypto`).
-3. Import the workflows in `workflows/` (see [workflows/IMPORT.md](workflows/IMPORT.md)): intake, errors and review.
+3. Import the workflows in `workflows/` (see [workflows/IMPORT.md](workflows/IMPORT.md)): intake, errors, review and
+   the Gmail adapter (`01-gmail.json`, optional: without it, intake is the webhook only).
    `01-intake.mine.json` is the current intake; in it and in the errors workflow, replace the `{{ALERT_CHAT_ID}}`
    placeholder with your own chat ID.
 4. Create the credentials in n8n (Bedrock API key, Postgres, Telegram, Gmail) and attach them to the nodes that show
@@ -116,7 +122,8 @@ alerts, and a Gmail OAuth2 credential for drafts.
 - **The verifier is itself a model.** It caught real mistakes, but it is not perfect. Only availability has a code
   backstop.
 - **Strict action scoring** counts a correctly stopped reply as a miss when the label says `escalate`.
-- **Intake is a webhook.** Reading a real inbox is the next step, ideally with a pilot client.
+- **Email arrives by polling,** so a draft appears about a minute after the email. A customer's reply in the same
+  thread is treated as a new enquiry; follow-ups are not linked yet.
 - **Real customer data needs a check of Bedrock's data terms first.** This project has never handled any.
 
 ## Repository layout
@@ -125,7 +132,7 @@ alerts, and a Gmail OAuth2 credential for drafts.
 |---|---|
 | `kb/facts.json` | The first version of the fact table, used to seed `fact_set`. The live table is in the database and changes only through the console (test on staging, then publish) |
 | `schema/` | The enquiry envelope, the classification JSON schema, and the Postgres tables and dashboard views |
-| `workflows/` | n8n exports: intake (live and staging), errors, review (live and staging) |
+| `workflows/` | n8n exports: intake, review and the Gmail adapter (each live and staging), errors |
 | `console/` | Staff console (TypeScript API + React app) over the `stats_*` views: queue, enquiry detail, blocked reasons, cost, health |
 | `WORKFLOW.md` | Node-by-node walkthrough |
 | `STATE.md` | Technical record: results, decisions, lessons |

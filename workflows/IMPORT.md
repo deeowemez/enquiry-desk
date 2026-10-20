@@ -1,6 +1,7 @@
 # Importing the workflows
 
-Three workflows make up the system. Import them in this order, because the first two are referenced by the third:
+Three workflows make up the system. Import them in this order, because the first two are referenced by the third. A fourth,
+the optional Gmail adapter (`01-gmail.json`, see *Email in* below), feeds email into the intake:
 
 | File | Workflow | Role |
 |---|---|---|
@@ -129,6 +130,13 @@ python3 test/staging.py status
 python3 test/staging.py promote         # read-only plan; add --yes to apply (backs up live first)
 python3 test/staging.py rollback --yes  # undo the last promotion
 ```
+
+**Email in:** `workflows/01-gmail.json` is the production Gmail adapter (`Gmail Trigger` → `email filter` → `to intake`), and
+`01-gmail.staging.json` its staging copy. Each needs the Gmail credential (default scopes, which include reading), the two columns
+`gmail_message_id` and `gmail_thread_id` from `schema/schema.sql` in its database, and its *Error workflow* set to that environment's
+errors workflow. Production takes every Primary email except `<mailbox>+staging@…`; staging takes only those. With `staging.py`,
+`create-gmail-live --yes` builds the production adapter from the staging one (inactive; switch it on in n8n). Use a mailbox that
+gets only test mail: every email in it is sent to the model.
 
 `promote review` and `rollback review` do the same for the review workflow. Live webhook paths, ids, Telegram state,
 the review link and the live database credential are preserved on promotion.

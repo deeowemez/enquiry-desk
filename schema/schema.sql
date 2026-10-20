@@ -84,6 +84,12 @@ alter table reply add column if not exists approved_at timestamptz;
 alter table reply add column if not exists drafted_at timestamptz;
 alter table reply add column if not exists gmail_draft_id text;
 alter table reply add column if not exists draft_error text;
+
+-- Email channel (2026-10-18): enquiries read from the mailbox by the Gmail adapter workflow have source = 'email'.
+-- gmail_message_id is the dedupe anchor; gmail_thread_id is where the reply draft goes, but only after the
+-- workflow has confirmed with Gmail that the message's sender is the enquiry's from_email.
+alter table enquiry add column if not exists gmail_message_id text;
+alter table enquiry add column if not exists gmail_thread_id text;
 create index if not exists enquiry_review_pending_idx on enquiry (received_at) where review_status = 'pending';
 
 -- Dashboard views. Every dashboard number is defined here, once, so the console, the README and any other tool all

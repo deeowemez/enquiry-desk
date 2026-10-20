@@ -1,6 +1,6 @@
 # Enquiry Desk — state
 
-**Last updated:** 2026-10-18. This file is the **technical record**: results, decisions and their reasons, node map,
+**Last updated:** 2026-10-20. This file is the **technical record**: results, decisions and their reasons, node map,
 lessons learned, how to run things. Current status and next steps live in the project notes (loaded at session start).
 
 ## Status
@@ -44,6 +44,8 @@ becomes a Gmail *draft* (cleared and clarify replies at once, escalated ones onc
   rollback). The **fact table is versioned in the database** (`fact_set`) and changes only through the **staff console**
   (`console/`, tailnet port 8444): draft → staging → 24-case test → publish, refused unless that exact version passed the gate.
 - **Staff console:** queue, enquiry detail (no customer text), blocked reasons, cost, health, facts, read-only prompts, re-checks.
+- **Email in (decision 24, live 2026-10-20):** a Gmail adapter workflow turns inbox mail into enquiries (`+staging@` mail goes to
+  staging), and the reply draft lands in the customer's own thread once Gmail confirms the sender.
 
 ## Staging, run comparison and the gate (2026-10-17)
 
@@ -310,6 +312,40 @@ non-`test+` addresses so the Telegram alert and the Gmail draft appear on camera
     pair) and `restore.sh` restores it; a test restore into a scratch database matched every row and all 11 views. Those dumps carry no
     privileges, so after a restore re-apply `schema/console_role.sql` and `schema/console_roles_phase2.sql`.
 
+24. **Email is a second way in, through an adapter workflow; drafts go into the customer's thread** (built 2026-10-18/19,
+    **live 2026-10-20**). Why: "it works on my inbox" is far more convincing than a webhook, and the reply belongs in the thread the
+    customer started. Design: a small workflow per environment (`01 Enquiry Desk - gmail`, staging copy `LnJNtyRxXx0u383F`) runs
+    `Gmail Trigger` (polls every minute, `simple: false`) → `email filter` → `to intake`, which posts to that environment's existing
+    intake webhook with `channel: email`, `gmail_message_id` and `gmail_thread_id`. The intake, its checks and the 24-case gate stay as
+    they are, so email inherits every safety rule. Choices:
+    - **One mailbox, split by plus-address:** mail to `+staging@` belongs to staging, everything else to production; each adapter drops
+      the other's mail.
+    - **Gmail query `in:inbox category:primary -from:me`:** an amazon.com transactional email (no newsletter headers) showed that
+      without `category:primary` production would classify it `other` and draft a clarifying question. A real enquiry misfiled to
+      Promotions still waits in the inbox for a person; it just gets no draft.
+    - **`email filter` also skips** no-reply/mailer-daemon senders, auto-replies (`Auto-Submitted`, `X-Autoreply`), bulk mail
+      (`List-Unsubscribe`, `List-Id`, `Precedence`) and empty bodies, and cuts quoted earlier messages and signatures (capped at 5000
+      characters). Unit-tested on 9 cases.
+    - **Dedupe on the Gmail id:** `normalise` accepts `channel: email` only with a hex Gmail id, sets `source = 'email'` and keys on
+      `sha256('gmail|' + message_id)`, so a re-poll is a duplicate but two emails with the same words are not. New nullable columns
+      `enquiry.gmail_message_id` and `gmail_thread_id` (in `schema.sql`; applied to `enquiry_staging`, **production at promotion**).
+    - **Threaded drafts only after a check:** `from email?` → `get original` (Gmail message get, continue on error) → `thread check`
+      confirms the message exists, is in that thread and was sent by the enquiry's `from_email`; only then does `create gmail draft`
+      get the `threadId` (the node adds `In-Reply-To`/`References` itself). Otherwise it drafts a fresh email. So a forged webhook post
+      can't put a draft into someone else's thread. The review workflow has the same three nodes before its draft step.
+    - **Latency about a minute** (polling). Gmail push (Pub/Sub) would be instant but needs Google Cloud and a public endpoint.
+    Verified on staging: form posts skip the check; forged ids → "original not found" → fresh draft; same id, new text → duplicate;
+    real emails: trial → `auto_send` with a **threaded draft**, worried parent → `child_wellbeing` escalate (no draft, by design),
+    injection → `prompt_injection` escalate, plain-address mail ignored; review form path (blocked → approve → unthreaded draft) still
+    works; an emailed blocked case (invented £190) approved on the staging review page → draft **in its thread** (`thread check`:
+    threaded). 24-case staging gate `20261020-123011` passes every gate. Production columns added 2026-10-20 (nullable, 854 existing rows untouched). The production adapter `01 Enquiry Desk - gmail`
+    (`P9xALtSwImtGEt4w`) was created by a person with `staging.py create-gmail-live --yes` (inactive; the agent's permission layer
+    blocks creating production workflows), then `promote --yes` (intake, 8 nodes) and `promote review --yes` (6 nodes), then switched
+    on. **Verified live:** a real email to the plain address → `trial_booking`, blocked by the verifier (it paraphrased the booking fact
+    as "a slot from our schedule"; the subject, GCSE Physics, isn't offered and the draft said so correctly) → approved on the
+    production review page → draft **in the customer's thread** (`thread check`: threaded), `sent_at` empty.
+    Known v1 limit: a customer's reply in the thread becomes a new enquiry (follow-ups are *Later*).
+
 ## Model strategy (decided 2026-10-14)
 
 - **Nova models only** while the credit is the budget (rule: credits only). Claude is out until a client pays.
@@ -367,7 +403,7 @@ cost a lot. The `apac.` rows are the in-region price; confirm on first use that 
 
 ## Node map
 
-**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 51 nodes incl. stickies)
+**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 54 nodes incl. stickies)
 
 | Stage | Nodes |
 |---|---|
@@ -378,6 +414,11 @@ cost a lot. The `apac.` rows are the in-region price; confirm on first use that 
 | ③ escalate | `action = escalate` |
 | ③ join | `validate claims`, `action = escalate (gate 2)`, `action = escalate` → `to record` (No Operation) |
 | ④ Record → review | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` → `needs review?` → (`open review` → `notify a human?` → `review alert` \| `draft for cleared?` → `create gmail draft` → `record draft`) |
+
+**Email thread check (decision 24):** the intake adds `from email?` → `get original` → `thread check` between `draft for cleared?` and
+`create gmail draft` (true branch of `from email?`; form enquiries go straight to the draft); the review workflow (17 nodes) adds the same
+three between `draft needed?` and its `create gmail draft`.
+**Gmail adapter** `01 Enquiry Desk - gmail` (`P9xALtSwImtGEt4w`; staging `LnJNtyRxXx0u383F`): `Gmail Trigger` → `email filter` → `to intake`.
 
 **Errors** `01 Enquiry Desk - errors` (`BSmcb09mPBarqPjO`): `Error Trigger` → `read error` → `mark failed` → `build alert` → `log failure` → `telegram alert`
 **Review** `01 Enquiry Desk - review` (`QQEDcUxU7OJIeNn3`): GET `review page` → `read query` → `load enquiry` → `render page` → `respond page` · POST `review action` → `read form` → `apply decision` → `render result` → `respond result`
@@ -432,6 +473,7 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261018-160317` | 22/24 | 6/6 | 6/6 | 20/24 | 0 | $0.00226 | staging with the facts read from the database (decision 22): passes every gate; only t03 differs from the previous run (verifier variance), and the document is byte-identical to the old node |
 | `20261018-164314` | 22/24 | 6/6 | 6/6 | 23/24 | 0 | $0.00238 | **live** after promoting `load facts` (decision 22): facts read from the database; passes every gate |
 | `20261018-142648` | 22/24 | 6/6 | 6/6 | 22/24 | 0 | $0.00237 | staging with `is_test` read from the database (decision 19): passes every gate; 0 drafts from scoring traffic |
+| `20261020-123011` | 22/24 | 6/6 | 6/6 | 21/24 | 0 | $0.00240 | staging with the email channel (decision 24): passes every gate; the form path is unchanged |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)
@@ -459,7 +501,9 @@ volume, image, the `:8443` Tailscale Serve entry, the `grafana_ro` role and the 
   backstop. Re-run the crafted set (see *Things learned*) whenever prompts change. Cost +40% from the verifier.
 - **Scoring is strict on purpose:** `blocked` ≠ `escalate` (t06 counts as a miss though both reach a human).
 - **t15 / t23 categories** still wrong (past-paper bank, US admissions → course_content) — replies are correct.
-- **Nothing is sent automatically.** Approve creates a Gmail draft (decision 17); cleared and clarify replies get one too (decision 18, live 2026-10-18); a person presses Send. Reading a real inbox is the next step, ideally for a pilot.
+- **Nothing is sent automatically.** Approve creates a Gmail draft (decision 17); cleared and clarify replies get one too (decision 18, live 2026-10-18); a person presses Send. The inbox is read too (decision 24, live 2026-10-20).
+- **Email channel gaps (v1):** a reply in a thread is a new enquiry; the console doesn't show whether an enquiry came by email or form; both adapters are active and split the mailbox by the `+staging@` address, so the mailbox must stay test-only
+  (synthetic-data rule).
 - **Drift risk:** the classifier schema is in the `build classify request` node (live) and `schema/classification.schema.json` (documentation only; nothing reads it); they already differ in `summary.maxLength` and the `confidence` description. `parse classification` also does not validate `required` fields or enums. Planned: a note in the file plus `test/check_schema.py` (structural compare; could also cover the `facts` node vs `kb/facts.yaml`).
 - `score.py`: no error-type counts (503 / 429 / timeout); stale `--psql` docstring example.
 - Repo cleanup done 2026-10-17: removed the session-1 answer key (`workflows/01-intake.json`, still in git history) and the scratch `test/test.json`.
@@ -558,9 +602,19 @@ in intake + errors) → commit **without** an attribution trailer.
 - Two CLI profiles on the Pi: `default` = `017820696925` (not this project); Bedrock + `$5` budget = `718339078322`.
 - `set -a; source .env; set +a` loads `.env`. n8n is **tailnet-only** (Tailscale Serve, no Funnel).
 
+**Gmail (n8n 2.26.8)**
+- **Gmail Trigger with `simple: false`** returns raw mailparser output: `headers` is a map of lower-case key → the whole
+  `"Key: value"` line, and `from`/`to`/`cc` are `{value: [{address, name}]}`. It skips drafts and sent-only mail, remembers the last
+  check, and reads at most 10 messages per poll by default. The message **get** with `simple: true` returns headers as top-level keys
+  (`From`).
+- **Gmail's inbox is not only people.** Transactional mail without list headers passes every header filter; `category:primary` in the
+  query is what keeps it out.
+- **The draft node's `threadId` option** is all threading needs: it adds `In-Reply-To`/`References` itself.
+- **The default Gmail OAuth scopes include reading mail**, so the drafts credential could read the inbox without re-authorising.
+
 ## Later
 
-- **Real inbox:** Gmail/Outlook in → reply saved as a draft in their inbox; approve → actually send (`sent_at`).
+- **Real inbox:** Gmail in is built (decision 24); still later: Outlook, a processed label, actually sending on approve (`sent_at`).
 - **`llm-call` sub-workflow** (provider adapter) once there's a second provider; **Ollama** on the M5 as that branch.
 - **LLM-as-judge** in `score.py` for `note_expected` cases; **follow-up** workflow for unanswered clarify replies.
 - **Conversations (with the real inbox).** Detect follow-ups by email thread headers (`In-Reply-To` /

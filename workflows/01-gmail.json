@@ -1,0 +1,122 @@
+{
+  "name": "01 Enquiry Desk - gmail",
+  "nodes": [
+    {
+      "id": "8c0def4b-0a98-4589-a643-aff2527f3ee8",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CJMeQj0HoOGHJp4E",
+          "name": "Gmail - drafts"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "Polls the business inbox every minute: new mail Gmail files under Primary (order notices, promotions and updates are skipped)",
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "in:inbox category:primary -from:me"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cf7502e4-0599-4955-b256-247d55bf4d0b",
+      "name": "email filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "This environment's mail only; skips robots, auto-replies and bulk mail; keeps only the new text",
+      "parameters": {
+        "jsCode": "// Turn one Gmail message into the intake's normal webhook fields, or drop it.\n// One mailbox serves both environments: mail to <mailbox>+staging@... belongs to STAGING, everything else to production.\nconst STAGING = false;\n\nconst out = [];\nfor (const item of $input.all()) {\n  const m = item.json;\n  const h = m.headers ?? {};                                         // mailparser: lower-case key -> \"Key: value\" line\n  const hv = k => String(h[k] ?? '').replace(/^[^:]*:\\s*/, '').trim();\n  const addrs = o => (o?.value ?? []).map(v => String(v.address ?? '').toLowerCase());\n\n  const recipients = [...addrs(m.to), ...addrs(m.cc), hv('delivered-to').toLowerCase()];\n  if (recipients.some(a => a.includes('+staging@')) !== STAGING) continue;   // the other environment's mail\n\n  // Not an enquiry: robots, auto-replies, bulk mail.\n  const sender = addrs(m.from)[0] ?? '';\n  const auto = hv('auto-submitted');\n  if (!sender\n      || /^(no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?)[@+]/i.test(sender)\n      || (auto && !/^no$/i.test(auto))\n      || h['list-unsubscribe'] || h['list-id']\n      || /^(bulk|list|junk|auto_reply)$/i.test(hv('precedence'))\n      || h['x-autoreply'] || h['x-autorespond']) continue;\n\n  // Only the new text: cut the quoted earlier message (\"On ... wrote:\", which Gmail may wrap onto two lines,\n  // or an Outlook \"Original Message\"/\"From:\" block) and the signature (\"-- \"), then drop any \"> \" lines.\n  let text = String(m.text ?? '').replace(/\\r\\n/g, '\\n');\n  const cut = text.search(/^(On [^\\n]*(\\n[^\\n]*)?wrote:\\s*$|-{2,} ?Original Message|From: .+$|-- ?$)/m);\n  if (cut > 0) text = text.slice(0, cut);\n  text = text.split('\\n').filter(l => !/^\\s*>/.test(l)).join('\\n').trim().slice(0, 5000);\n  if (!text) continue;\n\n  out.push({ json: {\n    email: sender,\n    name: m.from?.value?.[0]?.name || null,\n    subject: m.subject ?? null,\n    message: text,\n    channel: 'email',\n    gmail_message_id: m.id,\n    gmail_thread_id: m.threadId\n  }});\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "fc45f42d-b9a6-450b-b213-8d80cb66c0fe",
+      "name": "to intake",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        0
+      ],
+      "notesInFlow": true,
+      "notes": "Same webhook as a form post: everything after this is the normal intake",
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:5678/webhook/enquiry",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "ef545b8e-9cbf-4df1-953d-4806003b29b8",
+      "name": "Note gmail",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -260
+      ],
+      "parameters": {
+        "width": 700,
+        "height": 220,
+        "color": 4,
+        "content": "## Enquiry Desk — email channel\n\nA new email in the business inbox becomes a normal enquiry: this workflow only **converts** it and posts it to the intake webhook (`channel: email` plus Gmail's message and thread ids).\n\nThe intake does the rest. Its reply draft joins the customer's Gmail thread only after `thread check` confirms the sender with Gmail.\n\nSTAGING takes mail sent to `<mailbox>+staging@…`; production takes the rest."
+      }
+    }
+  ],
+  "pinData": null,
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "email filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "email filter": {
+      "main": [
+        [
+          {
+            "node": "to intake",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "BSmcb09mPBarqPjO",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "meta": null
+}

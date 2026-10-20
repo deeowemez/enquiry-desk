@@ -34,6 +34,7 @@ routing, a claim validator, retries, dead-letter, alerts, and measured accuracy 
 | `workflows/01-intake.mine.json` | **The live intake workflow** (export after every change; `staging.py export --live`) |
 | `workflows/01-intake.staging.json` | Export of the **staging** intake (`test/staging.py export`). Matches live unless a change is waiting to be promoted |
 | `workflows/01-review.staging.json` | Export of the **staging** review workflow (the Gmail-draft step went live 2026-10-17) |
+| `workflows/01-gmail.json`, `01-gmail.staging.json` | The **Gmail adapter** (email in, decision 24), live and staging (`staging.py export gmail [--live]`). Live takes every Primary email except `+staging@`; staging only those. Not promoted like the others: `create-gmail-live` built the live one once. The mailbox must stay test-only |
 | `workflows/01-errors.json`, `01-review.json` | Failure-path and human-review workflows. Chat ID is a `{{ALERT_CHAT_ID}}` placeholder (real value in `.env`) |
 | `console/` | The **staff console** (TypeScript: Fastify API + React/Vite web app, one Docker container, tailnet port 8444): the screens, plus facts editing, prompts (read-only) and re-checks; see `console/README.md`. `console/mockups/` holds the draft screens. DB side (apply to BOTH databases): `schema/console_views.sql`, `schema/console_role.sql`, `schema/facts.sql`, `schema/console_roles_phase2.sql` |
 | `workflows/IMPORT.md` | How to import the three workflows, with credentials, `config` and a first run |

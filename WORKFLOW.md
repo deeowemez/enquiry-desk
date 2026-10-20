@@ -568,6 +568,61 @@ Telegram button opens.
 
 ---
 
+## 8a. Email in: the Gmail workflow
+
+Built on staging 2026-10-18/19, live 2026-10-20 (decision 24 in `STATE.md`). Email is
+**another way into the same intake**, not a second pipeline: a small adapter workflow reads the mailbox and posts each enquiry
+to the intake webhook, so every check and the 24-case gate apply unchanged.
+
+**`01 Enquiry Desk - gmail`** (`P9xALtSwImtGEt4w`; staging copy `LnJNtyRxXx0u383F`; 3 nodes plus a sticky):
+
+#### `Gmail Trigger`
+Polls the mailbox **every minute** with the search `in:inbox category:primary -from:me`, using the existing `Gmail - drafts`
+credential (its default scopes include reading). It remembers what it has seen, so a message is read once. *Simplify* is off
+(`simple: false`), which gives the full text, the headers and the `threadId`.
+
+#### `email filter` (Code)
+Decides which emails are enquiries, and cleans the text:
+- **Environment split:** staging takes only mail addressed to `<mailbox>+staging@…`; production will take everything else.
+  One mailbox serves both, and neither processes the other's mail.
+- **Skips** no sender, `no-reply`/`mailer-daemon`/`postmaster`/`bounces` senders, auto-replies (`Auto-Submitted`, `X-Autoreply`),
+  bulk mail (`List-Unsubscribe`, `List-Id`, `Precedence: bulk/list/junk`) and empty bodies.
+- **Cleans:** cuts the quoted earlier conversation (`On … wrote:`, `Original Message`, a `From:` line, a `-- ` signature),
+  drops `>` lines and caps the text at 5000 characters, so only the new message is classified.
+- Outputs `{email, name, subject, message, channel: 'email', gmail_message_id, gmail_thread_id}`.
+
+#### `to intake` (HTTP Request)
+POSTs that item to the environment's intake webhook (`/webhook/enquiry`, or `/webhook/enquiry-staging` on staging) over `127.0.0.1`. From here it is an
+ordinary enquiry.
+
+**Intake changes:**
+- `normalise` accepts `channel: email` only with a hex Gmail id; then `source = 'email'` and the duplicate key is
+  `sha256('gmail|' + message_id)` instead of email | body | day. A re-poll is a duplicate; two emails with the same words are not.
+- `record received` stores `gmail_message_id` and `gmail_thread_id` (new nullable columns); `prepare row` carries them.
+- Three nodes between `draft for cleared?` and `create gmail draft` put the draft **in the customer's thread**, but only when it is safe:
+
+#### `from email?` (IF)
+True only for `source = 'email'` with a Gmail id. Form enquiries go straight to `create gmail draft`, as before.
+
+#### `get original` (Gmail, message get)
+Fetches the original message from Gmail by its id. *On Error: continue* and *Always Output Data*, so a missing message gives an
+error item instead of stopping the run.
+
+#### `thread check` (Code)
+Threads the draft only if the message exists, is in the stored thread, and was sent by the enquiry's `from_email`. Otherwise it
+returns an empty thread id ("original not found" / "sender or thread did not match") and the draft is a fresh email. Why: a webhook
+post can claim any Gmail id; without this check a forged post could place a draft inside someone else's conversation.
+
+`create gmail draft` then passes `threadId` only when `thread check` ran and approved it; the Gmail node adds the reply headers itself.
+The **review workflow** (17 nodes) has the same three nodes between `draft needed?` and its `create gmail draft`, reading
+`apply decision`, so an approved escalation also lands in its thread.
+
+> **⚠ Gotchas:** a reply from the customer in the same thread becomes a **new enquiry** (follow-ups are later work). Polling means
+> about a minute from email to draft. Mail Gmail files under Promotions or Updates is ignored on purpose; it stays in the inbox for a
+> person.
+
+---
+
 ## 9. Production and staging: the six workflows
 
 There are **three workflows**, and each has a **production** copy and a **staging** copy, so six in n8n. Production
@@ -580,9 +635,13 @@ person**.
 
 | Workflow | Production | Staging |
 |---|---|---|
-| **intake** (51 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
+| **intake** (54 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
 | **errors** | `01 Enquiry Desk - errors`, id `BSmcb09mPBarqPjO` (the intake's *Error workflow* setting) | `… (STAGING)`, id `xPopuT81Duh5QlOx` (the staging intake's *Error workflow* setting) |
-| **review** (14 nodes) | `01 Enquiry Desk - review`, `GET /webhook/review` and `POST /webhook/review-act`, id `QQEDcUxU7OJIeNn3` | `… (STAGING)`, `GET /webhook/review-staging` and `POST /webhook/review-act-staging`, id `S7LZWf6J4zNQKSgm` |
+| **review** (17 nodes) | `01 Enquiry Desk - review`, `GET /webhook/review` and `POST /webhook/review-act`, id `QQEDcUxU7OJIeNn3` | `… (STAGING)`, `GET /webhook/review-staging` and `POST /webhook/review-act-staging`, id `S7LZWf6J4zNQKSgm` |
+| **gmail** (§8a) | `01 Enquiry Desk - gmail`, id `P9xALtSwImtGEt4w`, everything except `+staging@` mail (created once with `staging.py create-gmail-live --yes`) | `01 Enquiry Desk - gmail (STAGING)`, id `LnJNtyRxXx0u383F`, only `+staging@` mail |
+
+The gmail workflow is not promoted like the others: production's was created from staging once. A change to the filter is made on both
+by hand (or the production one is deleted and re-created), then exported with `export gmail [--live]`.
 
 The ids are in `test/staging.py` (production) and `test/staging.json` (staging). Everything else in a staging copy
 is a straight copy of production.
@@ -600,6 +659,7 @@ is a straight copy of production.
 | Review page's form action and back link | `review-act`, `review?id=` | `review-act-staging`, `review-staging?id=` |
 | Name | `01 Enquiry Desk - …` | same, with ` (STAGING)` |
 | **Database** | **`enquiry`** (credential `Postgres account`) | **`enquiry_staging`** (credential `Postgres - staging`), same schema |
+| Gmail adapter | everything **except** `+staging@` mail, posts to `/webhook/enquiry` | only `+staging@` mail, posts to `/webhook/enquiry-staging` |
 
 **What is shared, and why it matters:**
 
@@ -697,6 +757,8 @@ back and publishes it (`rollback review --yes` for review).
 | `workflows/01-review.json` | **Production** review |
 | `workflows/01-intake.staging.json` | Staging intake |
 | `workflows/01-review.staging.json` | Staging review |
+| `workflows/01-gmail.json` | **Production** Gmail adapter (`staging.py export gmail --live`) |
+| `workflows/01-gmail.staging.json` | Staging Gmail adapter (`staging.py export gmail`) |
 
 There is no separate staging errors export, because it is production's with the Telegram node removed. Exports
 contain the `{{ALERT_CHAT_ID}}` placeholder, never the real value, and credentials are never exported.
@@ -712,6 +774,8 @@ contain the `{{ALERT_CHAT_ID}}` placeholder, never the real value, and credentia
 | Staging approve created a real draft | Same Gmail credential | Delete the draft; use synthetic enquiries |
 | Test enquiries show in dashboards | They share the tables | Filter `is_test` |
 | Review link from staging opens production's page | `review_base_url` points at production | Staging's `config.review_base_url` must be `…/review-staging` |
+| An email got no enquiry | Not in Primary, not `+staging@` on staging, or skipped by `email filter` (auto-reply, bulk, no-reply) | Check the adapter's executions in n8n; it is working as designed |
+| A staging email run isn't in the console | The console reads production's database only | Look in n8n's executions or in `enquiry_staging` |
 | Node missing its credential: save returns HTTP 400 but the draft saved and published | n8n's public API validates credentials on publish | Check the workflow's real state, then attach the credential |
 
 ---

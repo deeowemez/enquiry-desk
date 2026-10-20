@@ -6,5 +6,7 @@
   "postgres_credential": {
     "id": "78SZJwMBT6FMCUPm",
     "name": "Postgres - staging"
-  }
+  },
+  "gmail": "LnJNtyRxXx0u383F",
+  "gmail_live": "P9xALtSwImtGEt4w"
 }

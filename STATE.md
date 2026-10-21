@@ -157,7 +157,7 @@ is polled every minute. Only the chaos step posts to the webhook, standing for a
 | 7 | Chaos: archive the live fact set → form post → Telegram failure alert, dead letter 1 → restore → `replay.py` | "Failures can't vanish: saved, marked, announced, replayed with one command." |
 | 8 | Console *Facts*: the four steps, `booking.link`, open the editor (don't publish) | "The business edits its own facts, even the booking link, but a change can't go live until it passes 24 test cases." |
 | 9 | The gate output | "22/24 category, 6/6 safety flags, 23/24 actions, 0 invented claims, about a quarter of a cent each." |
-| 10 | README limits | "Synthetic data, 24 cases, the checker is itself a model, a test mailbox polled every minute." |
+| 10 | README scope and limits | "It answers questions about the business, not about one customer's account: those go to staff. Synthetic data, 24 cases, the checker is itself a model, a test mailbox polled every minute." |
 
 ## Decisions (agent-built on request, 2026-10-10/11)
 
@@ -528,6 +528,14 @@ volume, image, the `:8443` Tailscale Serve entry, the `grafana_ro` role and the 
 - **Email channel gaps (v1):** a reply in a thread is a new enquiry; the console doesn't show whether an enquiry came by email or form; both adapters are active and split the mailbox by the `+staging@` address, so the mailbox must stay test-only
   (synthetic-data rule).
 - **Drift risk:** the classifier schema is in the `build classify request` node (live) and `schema/classification.schema.json` (documentation only; nothing reads it); they already differ in `summary.maxLength` and the `confidence` description. `parse classification` also does not validate `required` fields or enums. Planned: a note in the file plus `test/check_schema.py` (structural compare; could also cover the `facts` node vs `kb/facts.yaml`).
+- **Scope: account questions (noted 2026-10-21, not built).** The system answers business questions only (no customer
+  records). A question about a specific student's lessons, bookings, payments or account escalates only if the drafter
+  reports `answerable: false`; no code rule enforces it. Evidence it can slip: links case l04 ("include the Zoom link")
+  got an unsupported promise ("You'll receive it directly from your tutor…") that the verifier passed. Plan: (1) 4–5
+  account cases (next lesson time, move a session, Zoom link, payment status) expecting `escalate`, run on staging;
+  (2) if any are drafted, an `account_specific` classifier flag that `route` always escalates (code, like rule ②);
+  (3) optional: sender lookup against known customers (e.g. Cal.com bookings) before any model runs. Scope is stated in
+  the README and `WORKFLOW.md` (gate 2).
 - `score.py`: no error-type counts (503 / 429 / timeout); stale `--psql` docstring example.
 - Repo cleanup done 2026-10-17: removed the session-1 answer key (`workflows/01-intake.json`, still in git history) and the scratch `test/test.json`.
 

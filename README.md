@@ -11,6 +11,11 @@ Enquiries sit unanswered for hours, and a chatbot that answers them would invent
 don't exist, and mishandle a worried parent. This project is the reliable middle: automate what is safe, hand the rest
 to a person, and measure both.
 
+**Scope.** It answers questions about the *business*: subjects, prices, how booking works, policies. That covers new
+leads (the main job: a fast first reply) and general questions from existing customers. It has **no customer records**,
+so anything about a specific student's lessons, bookings, payments or account ("when is my son's next lesson?",
+"can we move Thursday?", "send me the Zoom link") is meant to go to a person, not be answered.
+
 ## Results
 
 24 hand-labelled enquiries, re-run after every change. Latest run on the live workflow (`20261018-164314`):
@@ -127,6 +132,10 @@ alerts, and a Gmail OAuth2 credential for drafts.
 - **Strict action scoring** counts a correctly stopped reply as a miss when the label says `escalate`.
 - **Email arrives by polling,** so a draft appears about a minute after the email. A customer's reply in the same
   thread is treated as a new enquiry; follow-ups are not linked yet.
+- **Account questions rely on the model saying it can't answer.** The drafter must report `answerable: false` when a
+  person has to act, and that escalates; there is no code rule or customer lookup behind it yet. In one test ("send me
+  the Zoom link") it answered anyway with an unsupported promise, and the verifier let it through. Planned: test cases
+  for account questions, then a code rule that always escalates them.
 - **Real customer data needs a check of Bedrock's data terms first.** This project has never handled any.
 
 ## Repository layout

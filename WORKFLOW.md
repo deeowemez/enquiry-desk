@@ -384,6 +384,15 @@ earlier data back from `$('build draft request')`, dropping the bulky `requestBo
 The first gate was `route`, which looks at the *enquiry*. This gate looks at whether the *facts* were
 enough.
 
+**Scope note: account questions.** The workflow knows only business facts, never customer records, so a question
+about a specific student's lessons, bookings, payments or account can't be answered and should land here. Today that
+depends entirely on the drafter's own `answerable` report (its tool description says false when *"a person must act
+(change a booking, fix an account, make an exception)"*). Nothing in code checks it, and the verifier only checks
+claims against the facts. In links case l04 ("include the Zoom link") the drafter answered with *"You'll receive it
+directly from your tutor closer to the start time"* and the verifier passed it. Planned (not built): account-question
+test cases expecting `escalate`, then an `account_specific` flag that `route` always escalates, like the complaint rule;
+optionally a sender lookup against known customers before any model runs.
+
 #### `build verify request` (Code)
 A **second, separate model call** whose only job is checking. It lists every factual statement in the
 reply and whether the facts support it, quoting the fact line as evidence. The facts are given as **plain

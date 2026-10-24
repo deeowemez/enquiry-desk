@@ -107,7 +107,7 @@ flowchart TB
 
   subgraph S4["④ RECORD → REVIEW"]
     direction LR
-    P[prepare row] --> IE[(update enquiry<br/>processed)] --> RL[(run_log)] --> RP[(reply)] --> NR{needs<br/>review?} --> OR[(open review<br/>pending + token)] --> TG[/review alert<br/>Telegram link/]
+    P[prepare row] --> RR[(record results<br/>processed + run_log + reply)] --> NR{needs<br/>review?} --> OR[(open review<br/>pending + token)] --> TG[/review alert<br/>Telegram link/]
   end
 
   X[/"01 Enquiry Desk - errors<br/>mark failed → run_log → Telegram"/]
@@ -277,7 +277,7 @@ is polled every minute. Only the chaos step posts to the webhook, standing for a
     (byte-identical, key order included). In each database the workflow reads its single `live` row, so **staging's live set is the candidate under test and
     production's is what customers' replies are grounded on**; publishing copies a tested document across. Staging workflow: a new `load facts` Postgres node
     (credential `Postgres - staging`; Always Output Data on) feeds the `facts` Code node, which now takes the document from it and passes the original items
-    through, so every node reading `$('facts').first().json.facts` is unchanged; `prepare row` and `update enquiry` record `enquiry.facts_version`. A missing
+    through, so every node reading `$('facts').first().json.facts` is unchanged; `prepare row` and `update enquiry` (now `record results`) record `enquiry.facts_version`. A missing
     live set throws "No live fact set" and the staging errors workflow marks the row `failed` (tested; this also finally exercised the staging errors workflow).
     `score.py` takes its "allowed numbers" from the database under test (falling back to the seed `kb/facts.json`), so an edited price isn't flagged as invented.
     **Lessons:** (1) **store the document as `json`, not `jsonb`**: jsonb re-sorts object keys, which put `trial` before the price in what the model sees and
@@ -366,6 +366,13 @@ is polled every minute. Only the chaos step posts to the webhook, standing for a
     production, `promote --yes` (2 nodes), facts published, console rebuilt; a live email trial request (GCSE Chemistry) cleared and
     its draft landed in the thread ending with the link (`thread check`: threaded, `booking_link_added`: true). The line first came after the
     sign-off; it now goes just above it (paragraph-level match on "Best regards," and similar; exported code checked on 5 shapes).
+26. **The three record writes are one transaction, `record results`** (2026-10-24, **live**). `update enquiry`, `insert run_log` and
+    `insert reply` were three Postgres nodes in a row, so a failure in the second or third left an enquiry `processed` with missing
+    cost rows or no reply, and a replay then hit a half-recorded row. Now one statement with data-modifying `with` clauses does all
+    three, so they commit together or not at all (the errors path then sees a clean failure). Same SQL and parameters as before
+    (`$1`…`$20` from `prepare row`); downstream nodes already read `prepare row`, so nothing else changed. Intake 55 → 53 nodes.
+    Tested: the SQL alone in a rolled-back transaction (blocked → 4 log rows + reply; escalate → 1 log row, no reply), a staging
+    smoke of the four paths, two full staging runs (both pass every gate), then `promote --yes` and a live smoke (4 paths, `dead_letter` 0).
 
 ## Model strategy (decided 2026-10-14)
 
@@ -424,7 +431,7 @@ cost a lot. The `apac.` rows are the in-region price; confirm on first use that 
 
 ## Node map
 
-**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 55 nodes incl. stickies)
+**Intake workflow** `01 Enquiry Desk - intake` (`9OtHm7FyRtNdUl1p`, 53 nodes incl. stickies)
 
 | Stage | Nodes |
 |---|---|
@@ -434,7 +441,7 @@ cost a lot. The `apac.` rows are the in-region price; confirm on first use that 
 | ③ clarify | `action = clarify` → `build clarify request` → `clarify` → `read clarify` → `validate claims` |
 | ③ escalate | `action = escalate` |
 | ③ join | `validate claims` → `add booking link` (decision 25), `action = escalate (gate 2)`, `action = escalate` → `to record` (No Operation) |
-| ④ Record → review | `prepare row` → `update enquiry` → `insert run_log` → `insert reply` → `needs review?` → (`open review` → `notify a human?` → `review alert` \| `draft for cleared?` → `create gmail draft` → `record draft`) |
+| ④ Record → review | `prepare row` → `record results` (one transaction: enquiry, `run_log`, `reply`; decision 26) → `needs review?` → (`open review` → `notify a human?` → `review alert` \| `draft for cleared?` → `create gmail draft` → `record draft`) |
 
 **Email thread check (decision 24):** the intake adds `from email?` → `get original` → `thread check` between `draft for cleared?` and
 `create gmail draft` (true branch of `from email?`; form enquiries go straight to the draft); the review workflow (17 nodes) adds the same
@@ -497,6 +504,7 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261020-123011` | 22/24 | 6/6 | 6/6 | 21/24 | 0 | $0.00240 | staging with the email channel (decision 24): passes every gate; the form path is unchanged |
 | `20261020-063509` / `-063952` | 22/24 | 6/6 | 6/6 | 19/24, 19/24 | 0 | $0.00232 / $0.00211 | staging, booking link with facts **v5**: **fails** (actions). t04 newly blocked: the reworded `booking.how` ("New subscription: …") made pricing replies describe what a subscription includes |
 | `20261020-064619` / `-065019` | 22/24 | 6/6 | 6/6 | 23/24, 23/24 | 0 | $0.00234 | staging, booking link with facts **v6** (`booking.how` back to the original): passes every gate, both runs (console gate) |
+| `20261024-184842` / `-185241` | 22/24 | 6/6 | 6/6 | 23/24, 23/24 | 0 | $0.00235 / $0.00234 | staging, `record results` (decision 26): passes every gate, both runs; promoted, live smoke `20261024-190853` 4/4 paths recorded |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)

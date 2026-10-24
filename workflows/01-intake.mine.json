@@ -193,31 +193,6 @@
     },
     {
       "parameters": {
-        "operation": "executeQuery",
-        "query": "update enquiry\n   set category = $2, confidence = $3::numeric, language = $4,\n       safety_flags = $5::jsonb, missing_slots = $6::jsonb, action = $7,\n       facts_version = $8::int,\n       status = 'processed'\n where id = $1::uuid\nreturning id;",
-        "options": {
-          "queryReplacement": "={{ [ $json.id, $json.category, $json.confidence, $json.language, $json.safety_flags, $json.missing_slots, $json.action, $json.facts_version ] }}"
-        }
-      },
-      "id": "093b3830-e611-4405-ac98-25010fd7288e",
-      "name": "update enquiry",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        224,
-        2096
-      ],
-      "notesInFlow": true,
-      "credentials": {
-        "postgres": {
-          "id": "k9GMxaMtEYrelvvU",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "The row already exists (record received). Fill in the results and mark it processed"
-    },
-    {
-      "parameters": {
         "content": "## Enquiry Desk — what this does\n\nA customer enquiry arrives. It is **classified**, answered **only from a fact table it cannot\ndeviate from**, and recorded — with cost tracked per enquiry.\n\n**The business problem.** Meridian Tutors (fictional) is staffed from the UK, 09:00–18:00 UTC.\nIts customers are in Hong Kong, Singapore and Malaysia — UTC+8. Those UK hours are 17:00–02:00\nlocal, so **the entire Asian business day is unstaffed.** A parent asking a question at 10am\nlocal waits seven hours, while emailing two competitors.\n\n**The flow**\n\n`form → envelope → save (202) → classify → derive slots → route → draft / clarify → answerable? → verify → validate → record → review` · failures → `01 Enquiry Desk - errors`\n\n**The design decision worth defending:** grounding comes from a **structured fact table, not RAG**.\nIt is auditable, cheaper, and it cannot invent a price. A tutoring company can survive a slow\nreply; it cannot survive quoting a discount that does not exist.\n\n**Cost:** ~$0.0023 per enquiry on Amazon Nova 2 Lite (Bedrock), at AWS's real per-token prices.\nA model per stage and the price table live in the `config` node. Measured over 24 test cases, not estimated.\n\n⚠️ **Sessions 1–4 done** — see the red note for what is still missing.",
         "height": 520,
         "width": 1140,
@@ -282,7 +257,7 @@
     },
     {
       "parameters": {
-        "content": "### ④ RECORD\n`update enquiry` (status → processed), `run_log` (cost + model per stage), `reply` (blocked ones with the reason). Nothing is sent. By design.",
+        "content": "### ④ RECORD\n`record results`, one transaction: enquiry (status → processed), `run_log` (cost + model per stage), `reply` (blocked ones with the reason). Nothing is sent. By design.",
         "height": 580,
         "width": 3620,
         "color": 5
@@ -311,31 +286,6 @@
         1120,
         -720
       ]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "insert into run_log (enquiry_id, stage, status, attempt, model, cost_usd, error)\nselect $1::uuid, 'classify', 'ok', 1, $2::text, $3::numeric, null::text\nunion all\nselect $1::uuid, $5::text, 'ok', 1, $10::text, $4::numeric, null::text where $5::text <> ''\nunion all\nselect $1::uuid, 'verify', 'ok', 1, $11::text, $9::numeric, null::text where $9::numeric > 0\nunion all\nselect $1::uuid, 'validate', case when $6::boolean then 'failed' else 'ok' end, 1, null::text,\n       0::numeric, nullif($7::text, '') where $8::boolean;",
-        "options": {
-          "queryReplacement": "={{ [ $('prepare row').first().json.id, $('prepare row').first().json.classify_model, $('prepare row').first().json.classify_cost_usd, $('prepare row').first().json.draft_cost_usd, $('prepare row').first().json.draft_stage, $('prepare row').first().json.reply_blocked, $('prepare row').first().json.block_reason, $('prepare row').first().json.validated, $('prepare row').first().json.verify_cost_usd, $('prepare row').first().json.draft_model, $('prepare row').first().json.verify_model ] }}"
-        }
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.6,
-      "position": [
-        448,
-        2096
-      ],
-      "id": "c9c8ec0a-188b-4376-a664-cc73c1781bcb",
-      "name": "insert run_log",
-      "notesInFlow": true,
-      "credentials": {
-        "postgres": {
-          "id": "k9GMxaMtEYrelvvU",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "classify always; draft/clarify when a reply was written; validate (ok/failed + reason) when checked"
     },
     {
       "parameters": {
@@ -779,31 +729,6 @@
       ],
       "notesInFlow": true,
       "notes": "Numbers by regex, availability by code, free-text claims by the verifier. Any problem -> blocked"
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "insert into reply (id, enquiry_id, body, grounded_on, blocked, block_reason)\nselect gen_random_uuid(), $1::uuid, $2::text, $3::jsonb, $4::boolean, nullif($5::text, '')\nwhere coalesce($2::text, '') <> '';",
-        "options": {
-          "queryReplacement": "={{ [ $('prepare row').first().json.id, $('prepare row').first().json.draft_reply, $('prepare row').first().json.grounded_on, $('prepare row').first().json.reply_blocked, $('prepare row').first().json.block_reason ] }}"
-        }
-      },
-      "id": "60e4727a-f71f-4ba1-80f3-dc1fd7baea19",
-      "name": "insert reply",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        672,
-        2096
-      ],
-      "notesInFlow": true,
-      "credentials": {
-        "postgres": {
-          "id": "k9GMxaMtEYrelvvU",
-          "name": "Postgres account"
-        }
-      },
-      "notes": "Every written reply, blocked or not, with the reason. Nothing is sent: sent_at stays null"
     },
     {
       "parameters": {
@@ -1395,6 +1320,31 @@
       "parameters": {
         "jsCode": "// Booking link: code, not the model, adds the one link a parent needs, taken from the fact table (booking.link).\n// Only trial bookings that cleared or got a clarifying question; never escalations or blocked replies. The link was checked\n// as a fact, so adding it after `validate claims` can't add an unchecked claim.\nconst link = $('facts').first().json.facts?.booking?.link;\nconst key = u => String(u).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n// The line goes just above the sign-off (\"Best regards,\\nMeridian Tutors\"), or at the end if there is none.\nconst SIGN_OFF = /^(?:(?:best|kind|warm|warmest|many)\\s+)?(?:regards|wishes|thanks)[,.!]?$|^(?:thank you|thanks again|(?:yours\\s+)?sincerely|cheers|best|all the best)[,.!]?$/i;\nconst withLink = (reply, line) => {\n  const paras = reply.trimEnd().split(/\\n\\s*\\n/);\n  const first = p => p.trim().split('\\n')[0].trim();\n  let at = -1;\n  if (SIGN_OFF.test(first(paras[paras.length - 1]))) at = paras.length - 1;\n  else if (paras.length > 1 && SIGN_OFF.test(first(paras[paras.length - 2])) && paras[paras.length - 1].trim().split('\\n').length <= 2) at = paras.length - 2;\n  if (at < 1) return paras.join('\\n\\n') + '\\n\\n' + line;\n  paras.splice(at, 0, line);\n  return paras.join('\\n\\n');\n};\nreturn $input.all().map(i => {\n  const p = i.json;\n  const reply = p.draft_reply ?? '';\n  const wanted = !!link && p.classification?.category === 'trial_booking' && ['auto_send', 'clarify'].includes(p.action)\n    && !p.reply_blocked && reply.trim() !== '';\n  if (!wanted || reply.toLowerCase().includes(key(link))) return { json: { ...p, booking_link_added: false } };\n  return { json: { ...p, draft_reply: withLink(reply, 'You can book your free trial here: ' + link), booking_link_added: true } };\n});"
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- One statement, so the three writes succeed or fail together (no half-recorded enquiry).\nwith upd as (\n  update enquiry\n     set category = $2, confidence = $3::numeric, language = $4,\n         safety_flags = $5::jsonb, missing_slots = $6::jsonb, action = $7,\n         facts_version = $8::int,\n         status = 'processed'\n   where id = $1::uuid\n  returning id\n), log as (\n  -- classify always; draft/clarify when a reply was written; verify when it ran; validate (ok/failed + reason) when checked\n  insert into run_log (enquiry_id, stage, status, attempt, model, cost_usd, error)\n  select $1::uuid, 'classify', 'ok', 1, $9::text, $10::numeric, null::text\n  union all\n  select $1::uuid, $12::text, 'ok', 1, $17::text, $11::numeric, null::text where $12::text <> ''\n  union all\n  select $1::uuid, 'verify', 'ok', 1, $18::text, $16::numeric, null::text where $16::numeric > 0\n  union all\n  select $1::uuid, 'validate', case when $13::boolean then 'failed' else 'ok' end, 1, null::text,\n         0::numeric, nullif($14::text, '') where $15::boolean\n), rep as (\n  -- every written reply, blocked or not, with the reason; sent_at stays null\n  insert into reply (id, enquiry_id, body, grounded_on, blocked, block_reason)\n  select gen_random_uuid(), $1::uuid, $19::text, $20::jsonb, $13::boolean, nullif($14::text, '')\n  where coalesce($19::text, '') <> ''\n)\nselect id from upd;",
+        "options": {
+          "queryReplacement": "={{ [ $('prepare row').first().json.id, $('prepare row').first().json.category, $('prepare row').first().json.confidence, $('prepare row').first().json.language, $('prepare row').first().json.safety_flags, $('prepare row').first().json.missing_slots, $('prepare row').first().json.action, $('prepare row').first().json.facts_version, $('prepare row').first().json.classify_model, $('prepare row').first().json.classify_cost_usd, $('prepare row').first().json.draft_cost_usd, $('prepare row').first().json.draft_stage, $('prepare row').first().json.reply_blocked, $('prepare row').first().json.block_reason, $('prepare row').first().json.validated, $('prepare row').first().json.verify_cost_usd, $('prepare row').first().json.draft_model, $('prepare row').first().json.verify_model, $('prepare row').first().json.draft_reply, $('prepare row').first().json.grounded_on ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "name": "record results",
+      "position": [
+        224,
+        2096
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "k9GMxaMtEYrelvvU",
+          "name": "Postgres account"
+        }
+      },
+      "notesInFlow": true,
+      "notes": "One transaction: enquiry → processed, run_log (cost + model per stage), reply (if one was written). Nothing is sent",
+      "id": "76c01a0f-b640-4258-bf0c-6bdaf5a6b0c1"
     }
   ],
   "pinData": {},
@@ -1469,18 +1419,7 @@
       "main": [
         [
           {
-            "node": "update enquiry",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "update enquiry": {
-      "main": [
-        [
-          {
-            "node": "insert run_log",
+            "node": "record results",
             "type": "main",
             "index": 0
           }
@@ -1654,17 +1593,6 @@
         ]
       ]
     },
-    "insert run_log": {
-      "main": [
-        [
-          {
-            "node": "insert reply",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "record received": {
       "main": [
         [
@@ -1772,17 +1700,6 @@
         [
           {
             "node": "validate claims",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "insert reply": {
-      "main": [
-        [
-          {
-            "node": "needs review?",
             "type": "main",
             "index": 0
           }
@@ -1952,6 +1869,17 @@
         [
           {
             "node": "to record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "record results": {
+      "main": [
+        [
+          {
+            "node": "needs review?",
             "type": "main",
             "index": 0
           }

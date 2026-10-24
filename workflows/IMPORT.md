@@ -83,7 +83,7 @@ dropdown.
 ### 3. `01-intake.mine.json`
 
 1. Attach `Bedrock - API key` to `classify`, `draft`, `verify` and `clarify`, `Postgres account` to `record received`,
-   `load facts`, `update enquiry`, `insert run_log`, `insert reply`, `open review` and `record draft`, `Gmail - drafts` to `create gmail draft`,
+   `load facts`, `record results`, `open review` and `record draft`, `Gmail - drafts` to `create gmail draft`,
    and `Telegram - alerts bot` to `review alert`. In `review alert`, replace the `{{ALERT_CHAT_ID}}` placeholder.
 2. **`config` node.** Set `review_base_url` to `https://<your-n8n>/webhook/review`. The same node holds the model
    for each stage and the price table used for cost figures. Change a stage's model there, and add its prices to

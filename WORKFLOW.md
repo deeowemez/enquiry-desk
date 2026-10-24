@@ -100,7 +100,7 @@ flowchart TD
     VC --> TR((to record)); G2 --> TR; AE --> TR
   end
   subgraph S4["④ Record"]
-    PR[prepare row] --> UE[(update enquiry)] --> RL[(insert run_log)] --> IR[(insert reply)] --> NR{needs review?}
+    PR[prepare row] --> RR[(record results)] --> NR{needs review?}
     NR -- yes --> OR[(open review)] --> NH{notify a human?} -- yes --> TG[review alert]
     NR -- no --> DC{draft for cleared?} -- yes --> CG[create gmail draft] --> RD[(record draft)]
   end
@@ -250,7 +250,7 @@ lesson slots in Hong Kong time, how to book (reply by email; no website or phone
 
 This node takes the document from `load facts` (throwing "No live fact set" if there isn't one) and passes the original
 items through, fetched back with `$('config').all()` because the Postgres node replaced them. It also remembers the version,
-`facts_version`, which `update enquiry` stores, so every enquiry records which facts answered it. Every later node reads the
+`facts_version`, which `record results` stores, so every enquiry records which facts answered it. Every later node reads the
 table with `$('facts').first().json.facts`, exactly as when the facts were written into this node by hand.
 
 > **⚠ Gotcha: the column is `json`, not `jsonb`.** jsonb re-sorts object keys. That moved `trial` ahead of the price in
@@ -480,22 +480,21 @@ Flattens everything into one row: category, flags, action, reply, block reason, 
 cost of each model call plus `total_cost_usd`. Arrays are turned into JSON strings so Postgres can store
 them as `jsonb`. It reads only `$input`, so it doesn't matter which branch the item came from.
 
-#### `update enquiry` (Postgres)
-The row already exists from `record received`. This fills in the classification, the action and `facts_version` (which
-fact table answered it), and sets **`status = 'processed'`**. The scoring script waits for that status before it reads the result.
+#### `record results` (Postgres)
+**One SQL statement, so its three writes succeed or fail together** (2026-10-24; it replaced three separate nodes, which could
+leave an enquiry marked `processed` with no reply if the second or third write failed). It uses data-modifying `with` clauses:
+- **the enquiry:** the row already exists from `record received`. This fills in the classification, the action and `facts_version`
+  (which fact table answered it), and sets **`status = 'processed'`**. The scoring script waits for that status before it reads the result.
+- **`run_log`:** one row per stage that ran: `classify` (always), `draft` or `clarify` (if a reply was written), `verify`
+  (if it ran), and `validate` (`ok`, or `failed` with the reason). Each row has **that stage's own model** and its
+  cost. This is where the cost-per-enquiry figure comes from, about $0.0023 measured over the 24 test cases.
+- **`reply`:** the reply text, `grounded_on`, `blocked` and `block_reason`, and only if there *is* a reply (the
+  escalate branch has none). `sent_at` stays empty: **this workflow never sends.** It creates a Gmail draft for cleared and clarify replies (below); the review workflow creates one for approved escalations (section 8).
 
-#### `insert run_log` (Postgres)
-One row per stage that ran: `classify` (always), `draft` or `clarify` (if a reply was written), `verify`
-(if it ran), and `validate` (`ok`, or `failed` with the reason). Each row has **that stage's own model** and its
-cost. This is where the cost-per-enquiry figure comes from, about $0.0023 measured over the 24 test cases.
+All 20 values come from `$('prepare row').first().json` as `$1`…`$20`.
 
-> **⚠ Gotcha:** this node uses `$('prepare row').first().json.id` instead of `$json.id`. The previous
-> node was Postgres, so `$json` is now `update enquiry`'s result, not the prepared row (item replacement
-> again). Every later node in this stage reaches back to `prepare row` the same way.
-
-#### `insert reply` (Postgres)
-Stores the reply text, `grounded_on`, `blocked` and `block_reason`, and only if there *is* a reply (the
-escalate branch has none). `sent_at` stays empty: **this workflow never sends.** It creates a Gmail draft for cleared and clarify replies (below); the review workflow creates one for approved escalations (section 8).
+> **⚠ Gotcha:** every later node in this stage uses `$('prepare row').first().json…` instead of `$json`. The previous
+> node was Postgres, so `$json` is now `record results`'s result (just the `id`), not the prepared row (item replacement again).
 
 #### `needs review?` (IF)
 `action` is `escalate` or `blocked` → a person must look (`open review`). Anything else, meaning `auto_send` and `clarify`, goes to `draft for cleared?`.
@@ -653,7 +652,7 @@ person**.
 
 | Workflow | Production | Staging |
 |---|---|---|
-| **intake** (55 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
+| **intake** (53 nodes) | `01 Enquiry Desk - intake`, webhook `POST /webhook/enquiry`, id `9OtHm7FyRtNdUl1p` | `… (STAGING)`, webhook `POST /webhook/enquiry-staging`, id `aWmVTiQHyv35wZSA` |
 | **errors** | `01 Enquiry Desk - errors`, id `BSmcb09mPBarqPjO` (the intake's *Error workflow* setting) | `… (STAGING)`, id `xPopuT81Duh5QlOx` (the staging intake's *Error workflow* setting) |
 | **review** (17 nodes) | `01 Enquiry Desk - review`, `GET /webhook/review` and `POST /webhook/review-act`, id `QQEDcUxU7OJIeNn3` | `… (STAGING)`, `GET /webhook/review-staging` and `POST /webhook/review-act-staging`, id `S7LZWf6J4zNQKSgm` |
 | **gmail** (§8a) | `01 Enquiry Desk - gmail`, id `P9xALtSwImtGEt4w`, everything except `+staging@` mail (created once with `staging.py create-gmail-live --yes`) | `01 Enquiry Desk - gmail (STAGING)`, id `LnJNtyRxXx0u383F`, only `+staging@` mail |

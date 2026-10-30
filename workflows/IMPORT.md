@@ -40,7 +40,8 @@ You don't need them to run the system.
 
    **Gmail OAuth2.** In Google Cloud, create a project, enable the **Gmail API**, configure the consent screen
    (External; add your mailbox as a test user, and publish the app so the refresh token does not expire after 7
-   days), then create an **OAuth client ID** of type *Web application* whose redirect URI is
+   days; publishing needs a homepage and privacy policy URL on an authorized domain, which is what `docs/` on GitHub
+   Pages is for, and the app can stay unverified), then create an **OAuth client ID** of type *Web application* whose redirect URI is
    `https://<your-n8n>/rest/oauth2-credential/callback`. Paste its client ID and secret into n8n and click
    **Sign in with Google**. Use a **dedicated mailbox**, not a personal one, because the credential's scopes are
    broad. The workflow only ever creates drafts; it has no send node.

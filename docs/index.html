@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meridian Enquiry Desk</title>
+<meta name="description" content="A portfolio demo: an n8n workflow that answers tutoring enquiries from a table of facts and hands risky ones to a person.">
+<style>
+  :root { --bg: #fdfdfc; --fg: #1c1c1a; --muted: #5d5d58; --line: #e2e1dc; --link: #1f5fbf; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --fg: #ecebe6; --muted: #a5a49d; --line: #33332f; --link: #7fb0ff; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 42rem; margin: 0 auto; padding: 3rem 1rem 4rem; }
+  h1 { font-size: 1.8rem; line-height: 1.2; margin: 0 0 .5rem; }
+  h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; }
+  p, li { margin: .5rem 0; }
+  .note { border-left: 3px solid var(--line); padding: .25rem 0 .25rem 1rem; color: var(--muted); }
+  a { color: var(--link); }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Meridian Enquiry Desk</h1>
+  <p>An automated first reply for a tutoring company's enquiry inbox. It answers questions about the business
+    (subjects, prices, how booking works, policies) <strong>only from a table of facts</strong>, checks every
+    price and link in its own reply before a person sees it, and sends anything risky or personal to a member of staff.</p>
+
+  <p class="note"><strong>This is a portfolio demo.</strong> Meridian Tutors is a fictional company: every price,
+    policy and enquiry is invented, and the connected mailbox is a test inbox that receives only test messages.
+    It is not a public service and does not accept enquiries from the public.</p>
+
+  <h2>What it does with the mailbox</h2>
+  <ul>
+    <li>Reads new messages in the test inbox, so each one can be classified and answered.</li>
+    <li>Saves a suggested reply as a <em>draft</em> in the same mailbox for a person to review. It does not send email on its own.</li>
+  </ul>
+
+  <h2>More</h2>
+  <ul>
+    <li><a href="privacy.html">Privacy policy</a></li>
+    <li><a href="https://github.com/deeowemez/enquiry-desk">Source code, design notes and test results</a></li>
+  </ul>
+
+  <footer>Meridian Enquiry Desk · a portfolio project · <a href="privacy.html">Privacy</a></footer>
+</main>
+</body>
+</html>

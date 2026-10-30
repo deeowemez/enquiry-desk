@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy</title>
+<meta name="description" content="Privacy policy for the Meridian Enquiry Desk portfolio demo.">
+<style>
+  :root { --bg: #fdfdfc; --fg: #1c1c1a; --muted: #5d5d58; --line: #e2e1dc; --link: #1f5fbf; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161615; --fg: #ecebe6; --muted: #a5a49d; --line: #33332f; --link: #7fb0ff; }
+  }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 42rem; margin: 0 auto; padding: 3rem 1rem 4rem; }
+  h1 { font-size: 1.8rem; line-height: 1.2; margin: 0 0 .25rem; }
+  h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; }
+  p, li { margin: .5rem 0; }
+  .meta { color: var(--muted); margin: 0 0 1.5rem; }
+  a { color: var(--link); }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Meridian Enquiry Desk · last updated 30 October 2026</p>
+
+  <p>The Meridian Enquiry Desk is a portfolio demo, not a public service. Meridian Tutors is a fictional company.
+    The app is connected to one test mailbox owned by the developer, and only test messages with invented content
+    are sent to it. No one else signs in to the app.</p>
+
+  <h2>What the app accesses</h2>
+  <p>With the mailbox owner's permission, through Google's Gmail API, the app:</p>
+  <ul>
+    <li>reads new messages in the test inbox (sender, subject, body and message id);</li>
+    <li>creates draft replies in the same mailbox. It never sends email by itself: a person reviews each draft.</li>
+  </ul>
+
+  <h2>How the data is used</h2>
+  <ul>
+    <li>Message text is sent to Amazon Bedrock (AWS) to classify the enquiry and draft a reply. Bedrock does not
+      use this data to train models.</li>
+    <li>Each enquiry, its classification and the draft reply are stored in a database on the developer's own server,
+      to show the workflow and measure its accuracy.</li>
+    <li>Staff alerts (Telegram) carry only a link to a private review page, never the message content.</li>
+  </ul>
+  <p>The data is not sold, shared with anyone else, or used for advertising.</p>
+
+  <h2>Google user data</h2>
+  <p>The app's use and transfer of information received from Google APIs adheres to the
+    <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+    including the Limited Use requirements.</p>
+
+  <h2>Keeping and deleting data</h2>
+  <p>Test enquiries are kept in the demo database for as long as the demo runs. Access can be revoked at any time
+    from the Google account's <a href="https://myaccount.google.com/permissions">third-party access settings</a>,
+    and stored data is deleted on request.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy: open an issue on the
+    <a href="https://github.com/deeowemez/enquiry-desk/issues">project's GitHub page</a>.</p>
+
+  <footer><a href="index.html">Meridian Enquiry Desk</a> · a portfolio project</footer>
+</main>
+</body>
+</html>

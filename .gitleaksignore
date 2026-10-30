@@ -1,0 +1,9 @@
+# gitleaks false positives: `external_key` is the enquiry duplicate key (a sha256 of email|body|date), not a secret.
+# Session-1 sample data in commit a3d4cba. Format: commit:file:rule:line
+a3d4cba7ed92fd9b12e1417672d42b59b6012213:workflows/01-intake.mine.json:generic-api-key:344
+a3d4cba7ed92fd9b12e1417672d42b59b6012213:workflows/01-intake.mine.json:generic-api-key:361
+a3d4cba7ed92fd9b12e1417672d42b59b6012213:workflows/01-intake.mine.json:generic-api-key:509
+a3d4cba7ed92fd9b12e1417672d42b59b6012213:workflows/01-intake.mine.json:generic-api-key:819
+a3d4cba7ed92fd9b12e1417672d42b59b6012213:workflows/01-intake.mine.json:generic-api-key:853
+a3d4cba7ed92fd9b12e1417672d42b59b6012213:workflows/01-intake.mine.json:generic-api-key:921
+a3d4cba7ed92fd9b12e1417672d42b59b6012213:workflows/01-intake.mine.json:generic-api-key:1083

@@ -1,5 +1,7 @@
 # Enquiry Desk
 
+[![CI](https://github.com/deeowemez/enquiry-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/deeowemez/enquiry-desk/actions/workflows/ci.yml)
+
 An n8n workflow that answers customer enquiries for a tutoring company, **only from a table of facts**, checks every
 claim in its own reply before storing it, sends risky cases to a person, and never loses an enquiry.
 
@@ -99,6 +101,12 @@ Nova 2 Lite. I compared Nova Micro, Lite and Pro on `classify`; none beat Nova 2
 | `test/staging.py` | A staging copy of the workflows. Changes are tested there; promoting to the live workflow is a separate, deliberate step with a backup and a rollback |
 | `test/sweep.py` | Runs a model experiment on staging with a lock and a guaranteed restore |
 | `test/replay.py` | Re-posts failed enquiries from the dead-letter view |
+| `test/check_exports.py`, `test/test_checks.py` | Offline checks: the workflow exports are valid and clean (no pinned data, placeholder chat id, synthetic emails only, no keys); unit tests for the price and link checks, the gate, and that the scorer's link rule is the same as the live workflow's |
+
+**CI** (`.github/workflows/ci.yml`, GitHub Actions) runs on every push: the export check and the Python unit tests, a
+[gitleaks](https://github.com/gitleaks/gitleaks) secret scan of the whole history, and the console's typecheck and unit tests.
+None of it needs n8n, the database or a model. The live gate (`score.py` + `compare.py --check`) calls Bedrock, so it runs on
+the Pi against staging, and promoting to production stays a deliberate step a person takes.
 
 Four of the cases separate this from a chatbot:
 

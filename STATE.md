@@ -373,6 +373,16 @@ is polled every minute. Only the chaos step posts to the webhook, standing for a
     (`$1`…`$20` from `prepare row`); downstream nodes already read `prepare row`, so nothing else changed. Intake 55 → 53 nodes.
     Tested: the SQL alone in a rolled-back transaction (blocked → 4 log rows + reply; escalate → 1 log row, no reply), a staging
     smoke of the four paths, two full staging runs (both pass every gate), then `promote --yes` and a live smoke (4 paths, `dead_letter` 0).
+27. **CI on GitHub Actions for the offline checks; the live gate and promotion stay on the Pi** (2026-10-30). Why: the manual
+    export scan becomes a check that runs on every push, and the scorer's rules get tests. Three jobs: `test/check_exports.py`
+    (valid JSON, connections point at real nodes, no pinned data, credentials as references, `{{ALERT_CHAT_ID}}`, only
+    `@example.com` addresses, no key-shaped strings) plus `test/test_checks.py` (link and price checks, `compare.check`, and that
+    `score.py`'s `LINK_RE` equals the regex in the live `validate claims`); gitleaks over the full history (`.gitleaksignore`
+    lists 7 false positives: session-1 `external_key` hashes); the console's typecheck, fact-table unit tests and prompts check.
+    Not in CI: anything that calls Bedrock or needs the database (the 24-case gate, the console API tests), and deploys (decided
+    2026-10-21: no GitOps; a person promotes). Building it found that `01-intake.staging.json` had carried **pinned webhook data
+    since `5aedc23`** (a real request's headers: Tailscale login, name, IP); `staging.py export` now drops `pinData`, and the
+    check fails on it. It is still in git history.
 
 ## Model strategy (decided 2026-10-14)
 

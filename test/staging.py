@@ -243,6 +243,7 @@ def cmd_export(args):
     """Write the staging intake workflow to workflows/ (the repo rule: API changes must reach git).
 
     The Telegram chat id is replaced by the {{ALERT_CHAT_ID}} placeholder; the real value stays in .env.
+    Pinned data is dropped: it is a captured real request (Tailscale login, name, IP in its headers).
     This is also how a change gets promoted: a person imports this file into the live workflow, then runs `sync`.
     """
     live = "--live" in args
@@ -258,6 +259,7 @@ def cmd_export(args):
         if n["type"].endswith(".telegram") and "chatId" in n["parameters"]:
             n["parameters"]["chatId"] = "{{ALERT_CHAT_ID}}"
     out = {k: w[k] for k in ("name", "nodes", "pinData", "connections", "settings", "meta") if k in w}
+    out["pinData"] = {}
     names = {("intake", True): "01-intake.mine.json", ("intake", False): "01-intake.staging.json",
              ("review", True): "01-review.json", ("review", False): "01-review.staging.json",
              ("gmail", True): "01-gmail.json", ("gmail", False): "01-gmail.staging.json"}

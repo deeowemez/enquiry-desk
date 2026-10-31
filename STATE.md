@@ -381,8 +381,8 @@ is polled every minute. Only the chaos step posts to the webhook, standing for a
     lists 7 false positives: session-1 `external_key` hashes); the console's typecheck, fact-table unit tests and prompts check.
     Not in CI: anything that calls Bedrock or needs the database (the 24-case gate, the console API tests), and deploys (decided
     2026-10-21: no GitOps; a person promotes). Building it found that `01-intake.staging.json` had carried **pinned webhook data
-    since `5aedc23`** (a real request's headers: Tailscale login, name, IP); `staging.py export` now drops `pinData`, and the
-    check fails on it. It is still in git history.
+    since 2026-10-18** (a real request's headers: Tailscale login, name, IP); `staging.py export` now drops `pinData`, and the
+    check fails on it. Removed from git history on 2026-10-31 (every version of that file rewritten, then force-pushed).
 
 ## Model strategy (decided 2026-10-14)
 

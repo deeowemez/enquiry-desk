@@ -84,6 +84,23 @@ The full node-by-node walkthrough, written for someone new to n8n and including 
 [WORKFLOW.md](WORKFLOW.md). Decisions and their reasons, the results history and lessons learned are in
 [STATE.md](STATE.md).
 
+### Why a fact table, not RAG
+
+RAG (searching the business's documents and pasting the closest passages into the prompt) is the usual way to ground an
+AI reply. This project uses a small structured fact table instead, because for a business like this the risk is a wrong
+price, not a missing answer.
+
+| | Fact table (this project) | RAG over documents |
+|---|---|---|
+| Can code check a claim? | Yes: a price or link in the reply must exist in the table, or the reply is blocked | Hard: the source is free text, so checking falls back to another model |
+| What the model sees | Only the facts for the enquiry's topic, the same every time | Whatever the search ranks highest, which can change as documents change |
+| Changing a fact | Edited in the console, tested against the 24 cases, then published | Edit a document and re-index, with no test of how replies change |
+| Cost and parts | One small table in Postgres; no embeddings or vector store | An embedding model, a vector store and an indexing job |
+| Where it falls short | Someone has to keep the table up to date, and it doesn't scale to hundreds of pages | Better for large, unstructured knowledge (course handbooks, long policies) |
+
+With large documents, the two combine: RAG to find the passage, and the same code checks on any price, date or link it
+produces.
+
 ## Models and cost
 
 Amazon Nova on Bedrock, one model per stage (`classify`, `draft`, `verify`, `clarify`), configured in one `config`

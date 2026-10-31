@@ -257,7 +257,8 @@ table with `$('facts').first().json.facts`, exactly as when the facts were writt
 > what the model is shown, and a plain price question started being blocked. json keeps the order the facts were written in.
 
 Why a fact table rather than "search our documents" (RAG)? You can read it, it's cheap, and code can check
-a reply against it. A tutoring company survives a slow reply, but not a discount that doesn't exist.
+a reply against it. A tutoring company survives a slow reply, but not a discount that doesn't exist. The comparison, including where RAG
+would be the better choice, is in the [README](README.md#why-a-fact-table-not-rag).
 
 ---
 

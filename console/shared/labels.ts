@@ -37,17 +37,18 @@ const BLOCK_REASON_SENTENCE: Record<string, string> = {
 };
 
 const FLAG_LABEL: Record<string, string> = {
-  child_wellbeing: 'child wellbeing', prompt_injection: 'injection attempt', complaint: 'complaint',
-  refund_request: 'refund request', guarantee_sought: 'guarantee sought',
+  child_wellbeing: 'Child wellbeing', prompt_injection: 'Injection attempt', complaint: 'Complaint',
+  refund_request: 'Refund request', guarantee_sought: 'Guarantee sought',
 };
-export const flagLabel = (f: string) => FLAG_LABEL[f] ?? f.replace(/_/g, ' ');
+const sentence = (s: string) => { const t = s.replace(/_/g, ' '); return t.charAt(0).toUpperCase() + t.slice(1); };
+export const flagLabel = (f: string) => FLAG_LABEL[f] ?? sentence(f);
 
 export const TOPIC_LABEL: Record<string, string> = {
   pricing: 'Pricing', scheduling: 'Scheduling', deadlines: 'Deadlines', course_content: 'Course content',
   access: 'Access', complaint_or_sensitive: 'Complaint or sensitive', other: 'Other', booking: 'Booking',
-  trial: 'Trial lessons', refunds: 'Refunds',
+  trial: 'Trial lessons', refunds: 'Refunds', trial_booking: 'Trial booking',
 };
-export const topicLabel = (t: string | null) => (t ? TOPIC_LABEL[t] ?? t.replace(/_/g, ' ') : '—');
+export const topicLabel = (t: string | null) => (t ? TOPIC_LABEL[t] ?? sentence(t) : '—');
 
 export const STAGE_LABEL: Record<string, string> = {
   intake: 'Received', normalise: 'Received', classify: 'Classified', draft: 'Draft written', clarify: 'Question written',
@@ -61,9 +62,9 @@ export function reasonFor(o: {
   switch (o.outcome) {
     case 'failed': return `Failed at ${o.failedStage ?? 'a stage'}${o.errorKind ? ` (${o.errorKind})` : ''}`;
     case 'blocked': return o.blockKinds.length ? (BLOCK_REASON_SENTENCE[o.blockKinds[0]!] ?? BLOCK_REASON_SENTENCE.other!) : 'Stopped by a check';
-    case 'escalate': return o.flags.length ? `Safety flag: ${o.flags.map(flagLabel).join(', ')}` : `Routed to a person: ${topicLabel(o.topic).toLowerCase()}`;
-    case 'clarify': return o.missingSlots.length ? `Asked for: ${o.missingSlots.map(s => s.replace(/_/g, ' ')).join(', ')}` : 'Asked a clarifying question';
-    case 'auto_send': return 'Every claim supported by the facts';
+    case 'escalate': return o.flags.length ? `Safety: ${o.flags.map(f => flagLabel(f).toLowerCase()).join(', ')}` : `Topic: ${topicLabel(o.topic)}`;
+    case 'clarify': return o.missingSlots.length ? `Asked for ${o.missingSlots.map(s => s.replace(/_/g, ' ')).join(', ')}` : 'Asked a clarifying question';
+    case 'auto_send': return 'All claims supported';
     default: return 'Still being processed';
   }
 }

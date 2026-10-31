@@ -3,6 +3,7 @@ import type { EnquiryPage } from '../../../shared/api';
 import { OUTCOME_LABEL, TOPIC_LABEL } from '../../../shared/labels';
 import { useApi, useRange } from '../api';
 import { EnquiryTable } from '../components/EnquiryTable';
+import { ChevronLeft, ChevronRight, Flag } from 'lucide-react';
 import { Status } from '../ui';
 
 export function Enquiries() {
@@ -18,16 +19,16 @@ export function Enquiries() {
         <select className="chip" aria-label="Outcome" value={f.outcome} onChange={e => set({ outcome: e.target.value })}><option value="">Outcome: All</option>{Object.entries(OUTCOME_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
         <select className="chip" aria-label="Topic" value={f.topic} onChange={e => set({ topic: e.target.value })}><option value="">Topic: All</option>{Object.entries(TOPIC_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
         <select className="chip" aria-label="Review" value={f.review} onChange={e => set({ review: e.target.value })}><option value="">Review: All</option><option value="pending">Waiting</option><option value="approved">Approved</option><option value="taken_over">Taken over</option></select>
-        <label className="chip"><input type="checkbox" checked={f.flagged} onChange={e => set({ flagged: e.target.checked })} /> ⚑ Flagged only</label>
-        <span className="note" style={{ marginLeft: 'auto' }}>{q.data ? `${q.data.total} enquiries` : ''} · customer name, email and message are never shown</span>
+        <button className={`toggle${f.flagged ? ' on' : ''}`} aria-pressed={f.flagged} onClick={() => set({ flagged: !f.flagged })}><Flag size={13} aria-hidden />Flagged only</button>
+        <span className="count">{q.data ? `${q.data.total} enquiries` : ''}</span>
       </div>
       <Status error={q.error} loading={!q.data}>
         {q.data && <div className="card" style={{ padding: '6px 8px' }}><EnquiryTable rows={q.data.rows} /></div>}
       </Status>
       <div className="pager">
-        <button className="btn alt" disabled={f.page <= 1} onClick={() => setF(x => ({ ...x, page: x.page - 1 }))}>‹ Previous</button>
+        <button className="btn alt" disabled={f.page <= 1} onClick={() => setF(x => ({ ...x, page: x.page - 1 }))}><ChevronLeft size={14} aria-hidden />Previous</button>
         <span>Page {f.page} of {pages}</span>
-        <button className="btn alt" disabled={f.page >= pages} onClick={() => setF(x => ({ ...x, page: x.page + 1 }))}>Next ›</button>
+        <button className="btn alt" disabled={f.page >= pages} onClick={() => setF(x => ({ ...x, page: x.page + 1 }))}>Next<ChevronRight size={14} aria-hidden /></button>
       </div>
     </>
   );

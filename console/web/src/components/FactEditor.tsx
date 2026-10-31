@@ -2,6 +2,8 @@ import { useState } from 'react';
 import type { FactChange, FactEntry, FactsState } from '../../../shared/api';
 import { sectionTopics } from '../../../shared/factTopics';
 import { useSend } from '../api';
+import { X } from 'lucide-react';
+import { nice, Topics } from '../pages/Facts';
 import { Dialog } from '../ui';
 
 const PARENTS = ['company', 'support_hours', 'booking', 'pricing', 'pricing.trial', 'lesson_schedule', 'policies'];
@@ -26,8 +28,8 @@ export function FactEditor({ target, onClose }: { target: FactEntry | 'new'; onC
 
   return (
     <Dialog title={isNew ? 'Add a fact' : 'Edit a fact'} kind="drawer" onClose={onClose}>
-      <div style={{ display: 'flex', alignItems: 'center' }}><div><div style={{ fontSize: 17, fontWeight: 650 }}>{isNew ? 'Add a fact' : e!.label}</div>{e && <div className="ref">{e.path}</div>}</div><button className="x" onClick={onClose} aria-label="Close">✕</button></div>
-      <div className="callout">Changes are saved to a <b>draft</b> on staging. Nothing customers see changes until you apply it, test it and publish it.</div>
+      <div style={{ display: 'flex', alignItems: 'center' }}><div><div style={{ fontSize: 17, fontWeight: 650 }}>{isNew ? 'Add a fact' : nice(e!.label)}</div>{e && <div className="ref">{e.path}</div>}</div><button className="x" onClick={onClose} aria-label="Close"><X size={20} aria-hidden /></button></div>
+      <div className="callout">Saved to a <b>draft</b>. Customers see nothing new until it is tested and published.</div>
 
       {isNew && <div className="tabs"><button className={mode === 'fact' ? 'on' : ''} onClick={() => setMode('fact')}>A fact</button><button className={mode === 'deadline' ? 'on' : ''} onClick={() => setMode('deadline')}>A deadline</button></div>}
 
@@ -38,7 +40,7 @@ export function FactEditor({ target, onClose }: { target: FactEntry | 'new'; onC
       </label>}
 
       {isNew && mode === 'fact' && <>
-        <label className="field"><span>Where it belongs</span><select className="f" value={parent} onChange={ev => setParent(ev.target.value)}>{PARENTS.map(p => <option key={p} value={p}>{p.replace(/[._]/g, ' ')}</option>)}</select></label>
+        <label className="field"><span>Where it belongs</span><select className="f" value={parent} onChange={ev => setParent(ev.target.value)}>{PARENTS.map(p => <option key={p} value={p}>{nice(p.replace(/\./g, ' '))}</option>)}</select></label>
         <label className="field"><span>Name (letters, numbers, underscores)</span><input className="f" value={key} onChange={ev => setKey(ev.target.value.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 40))} placeholder="timezone_note" /></label>
         <label className="field"><span>What the system may say</span><textarea className="f" value={value} onChange={ev => setValue(ev.target.value)} /></label>
       </>}
@@ -49,7 +51,7 @@ export function FactEditor({ target, onClose }: { target: FactEntry | 'new'; onC
         <label className="chip"><input type="checkbox" checked={dl.verified} onChange={ev => setDl({ ...dl, verified: ev.target.checked })} /> Verified (unverified deadlines are never stated to customers)</label>
       </>}
 
-      <div className="kv"><dt>Used for</dt><dd>{topics.length ? topics.map(t => t.replace(/_/g, ' ')).join(', ') : <span className="mut">no topic: reference only</span>}</dd></div>
+      <div className="kv"><dt>Used for</dt><dd>{topics.length ? <Topics ids={topics} max={99} /> : <span className="mut">No topic (reference only)</span>}</dd></div>
       <label className="field"><span>Why this change (optional, kept in the history)</span><input className="f" value={note} onChange={ev => setNote(ev.target.value)} maxLength={300} /></label>
       {(err || save.error) && <div className="err" role="alert">{err || save.error?.message}</div>}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 'auto' }}>

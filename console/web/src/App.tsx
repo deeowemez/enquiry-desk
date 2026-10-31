@@ -1,4 +1,5 @@
 import { NavLink, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
+import { Activity, BookOpen, CircleDollarSign, FileText, Flag, Inbox, LayoutDashboard, Loader, ShieldAlert, type LucideIcon } from 'lucide-react';
 import type { Me, Overview } from '../../shared/api';
 import { useApi, useJob, useRange } from './api';
 import { ago } from './format';
@@ -12,11 +13,14 @@ import { Health } from './pages/Health';
 import { Overview as OverviewPage } from './pages/Overview';
 import { Queue } from './pages/Queue';
 
-const NAV: { to: string; label: string; icon: string; soon?: boolean }[] = [
-  { to: '/', label: 'Overview', icon: '▦' }, { to: '/queue', label: 'Needs a person', icon: '⚑' }, { to: '/enquiries', label: 'Enquiries', icon: '☰' },
-  { to: '/blocked', label: 'Blocked & why', icon: '△' }, { to: '/facts', label: 'Facts', icon: '▤' }, { to: '/prompts', label: 'Prompts', icon: '✎' },
-  { to: '/cost', label: 'Cost & models', icon: '$' }, { to: '/health', label: 'Health', icon: '♥' },
+const NAV: { to: string; label: string; icon: LucideIcon; soon?: boolean }[] = [
+  { to: '/', label: 'Overview', icon: LayoutDashboard }, { to: '/queue', label: 'Needs a person', icon: Flag }, { to: '/enquiries', label: 'Enquiries', icon: Inbox },
+  { to: '/blocked', label: 'Blocked & why', icon: ShieldAlert }, { to: '/facts', label: 'Facts', icon: BookOpen }, { to: '/prompts', label: 'Prompts', icon: FileText },
+  { to: '/cost', label: 'Cost & models', icon: CircleDollarSign }, { to: '/health', label: 'Health', icon: Activity },
 ];
+// Only a first name and initials are shown: the sign-in email never appears on screen.
+const firstName = (name?: string) => name?.trim().split(/\s+/)[0] ?? '';
+const initials = (name?: string) => (name ?? '').trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('') || '?';
 const TITLES: Record<string, string> = { '/': 'Overview', '/queue': 'Needs a person', '/enquiries': 'Enquiries', '/blocked': 'Blocked & why', '/facts': 'Facts', '/prompts': 'Prompts', '/cost': 'Cost & models', '/health': 'Health' };
 
 export function App() {
@@ -31,17 +35,17 @@ export function App() {
   return (
     <div className="app">
       <aside className="side">
-        <div className="brand">Enquiry Desk<small>Meridian Tutors · staff console</small></div>
+        <div className="brand">Enquiry Desk<small>Meridian Tutors</small></div>
         <div style={{ height: 14 }} />
         <nav aria-label="Main">
           {NAV.map(n => n.soon
-            ? <span key={n.to} className="nav soon" aria-disabled="true"><span className="ic">{n.icon}</span>{n.label}<span className="tag">soon</span></span>
+            ? <span key={n.to} className="nav soon" aria-disabled="true"><n.icon className="ic" size={17} aria-hidden />{n.label}<span className="tag">soon</span></span>
             : <NavLink key={n.to} to={{ pathname: n.to, search: `?days=${days}&traffic=${traffic}` }} end={n.to === '/'} className={({ isActive }) => `nav${isActive ? ' active' : ''}`}>
-                <span className="ic">{n.icon}</span>{n.label}{n.to === '/queue' && ov.data && ov.data.needsPerson.count > 0 && <span className="bd">{ov.data.needsPerson.count}</span>}
+                <n.icon className="ic" size={17} aria-hidden />{n.label}{n.to === '/queue' && ov.data && ov.data.needsPerson.count > 0 && <span className="bd">{ov.data.needsPerson.count}</span>}
               </NavLink>)}
         </nav>
         <div className="sp" />
-        <div className="who">{me.data?.name ? `Signed in as ${me.data.name}` : 'Signed in'}<br />{me.data?.login}</div>
+        <div className="who"><span className="avatar" aria-hidden>{initials(me.data?.name)}</span>{firstName(me.data?.name) || 'Signed in'}</div>
       </aside>
       <div className="main">
         <header className="top">
@@ -50,8 +54,9 @@ export function App() {
             <select className="chip" aria-label="Date range" value={days} onChange={ev => set({ days: Number(ev.target.value) })}>{[7, 14, 30, 90].map(d => <option key={d} value={d}>Last {d} days</option>)}</select>
             <div className="seg" role="group" aria-label="Traffic">{(['real', 'test', 'both'] as const).map(t => <button key={t} className={traffic === t ? 'on' : ''} aria-pressed={traffic === t} onClick={() => set({ traffic: t })}>{t === 'real' ? 'Real' : t === 'test' ? 'Scoring runs' : 'Both'}</button>)}</div>
           </>}
-          {job.data?.status === 'running' && <NavLink className="chip" to="/facts">⏳ {job.data.kind === 'gate' ? 'Test' : 'Re-check'} running {job.data.progress.done}/{job.data.progress.total || '…'}</NavLink>}
-          <span className="chip" title="Refreshes every minute">{ov.dataUpdatedAt ? `Updated ${ago(new Date(ov.dataUpdatedAt).toISOString())}` : '…'}</span>
+          {job.data?.status === 'running' && <NavLink className="chip" to="/facts"><Loader size={13} aria-hidden /> {job.data.kind === 'gate' ? 'Test' : 'Re-check'} running {job.data.progress.done}/{job.data.progress.total || '…'}</NavLink>}
+          <span className="stamp" title="All times are Hong Kong time">HKT</span>
+          <span className="stamp" title="Refreshes every minute">{ov.dataUpdatedAt ? `Updated ${ago(new Date(ov.dataUpdatedAt).toISOString())}` : ''}</span>
         </header>
         <main className="body">
           <Routes>

@@ -1,13 +1,24 @@
 import { useEffect, useRef, type ReactNode } from 'react';
+import { ArrowUpRight, Check, CircleHelp, Info, Loader, OctagonX, X, type LucideIcon } from 'lucide-react';
 import type { Outcome } from '../../shared/api';
 import { OUTCOME_LABEL } from '../../shared/labels';
 import { shortDay } from './format';
 
-const ICON: Record<Outcome, string> = { auto_send: '✓', clarify: '?', escalate: '↗', blocked: '!', failed: '✕', in_progress: '…' };
+const ICON: Record<Outcome, LucideIcon> = { auto_send: Check, clarify: CircleHelp, escalate: ArrowUpRight, blocked: OctagonX, failed: X, in_progress: Loader };
 const CLS: Record<Outcome, string> = { auto_send: 'p-auto', clarify: 'p-clar', escalate: 'p-esc', blocked: 'p-blk', failed: 'p-fail', in_progress: 'p-wait' };
 export const OUT_COLOR: Record<string, string> = { auto_send: 'var(--s1)', clarify: 'var(--s2)', escalate: 'var(--s3)', blocked: 'var(--s4)', failed: 'var(--crit)' };
 
-export const OutcomePill = ({ o }: { o: Outcome }) => <span className={`pill ${CLS[o]}`}>{ICON[o]} {OUTCOME_LABEL[o]}</span>;
+export function OutcomePill({ o }: { o: Outcome }) {
+  const I = ICON[o];
+  return <span className={`pill ${CLS[o]}`}><I size={12} strokeWidth={2.5} aria-hidden />{OUTCOME_LABEL[o]}</span>;
+}
+
+/** Help text on demand: an info icon with a tooltip, instead of a line of explanation on the page. */
+export const Hint = ({ text }: { text: string }) => <span className="hint" title={text} aria-label={text} role="img" tabIndex={0}><Info size={13} aria-hidden /></span>;
+
+/** A card title, with optional help text and something on the right (a count or a link). */
+export const CardHead = ({ title, hint, right }: { title: string; hint?: string; right?: ReactNode }) =>
+  <div className="cardhead"><h3>{title}</h3>{hint && <Hint text={hint} />}{right && <div className="cardright">{right}</div>}</div>;
 
 export function Status({ error, loading, children }: { error: unknown; loading: boolean; children: ReactNode }) {
   if (error) return <div className="card err" role="alert">{(error as Error).message}</div>;

@@ -10,13 +10,13 @@ customers are in UTC+8. It classifies each enquiry, answers only from a fact tab
 storing a reply, routes risky cases to a person on their phone, and never loses an enquiry. Runs on **Amazon
 Nova 2 Lite (Bedrock)**, paid from the AWS Free Tier credit ($99, expires 2027-03-09; **rule: credits only**).
 
-Latest full run on the **live** workflow, `20261018-164314` (facts read from the database), 24 hand-labelled cases:
+Latest full run on the **live** workflow, `20261101-224632` (2026-11-01, facts v2 from the database), 24 hand-labelled cases:
 
 | Category | Safety flags | Missing slots | **Actions** | Invented claims in sendable replies | Failed runs | Cost / enquiry |
 |---|---|---|---|---|---|---|
-| 22/24 | **6/6** | 6/6 | **23/24** | **0** | 0 | **~$0.0024** |
+| 22/24 | **6/6** | 6/6 | **21/24** | **0** | 0 | **~$0.0022** |
 
-Recent live and staging runs range 20–23/24 on actions (the usual ±1–2 spread); safety flags and invented claims have not moved.
+Recent live and staging runs range 20–23/24 on actions (`20261018-164314` scored 23/24) (the usual ±1–2 spread); safety flags and invented claims have not moved.
 
 **Cost note:** runs before 2026-10-17 used the wrong per-token price and under-stated cost by ~36% (they show ~$0.0018
 for what is really ~$0.0025). Compare cost only between runs made after the correction. The earlier live run
@@ -515,6 +515,7 @@ Snapshot 2026-10-14: 58 blocked replies = 45 gate 2 · 10 invented price · 3 ve
 | `20261020-063509` / `-063952` | 22/24 | 6/6 | 6/6 | 19/24, 19/24 | 0 | $0.00232 / $0.00211 | staging, booking link with facts **v5**: **fails** (actions). t04 newly blocked: the reworded `booking.how` ("New subscription: …") made pricing replies describe what a subscription includes |
 | `20261020-064619` / `-065019` | 22/24 | 6/6 | 6/6 | 23/24, 23/24 | 0 | $0.00234 | staging, booking link with facts **v6** (`booking.how` back to the original): passes every gate, both runs (console gate) |
 | `20261024-184842` / `-185241` | 22/24 | 6/6 | 6/6 | 23/24, 23/24 | 0 | $0.00235 / $0.00234 | staging, `record results` (decision 26): passes every gate, both runs; promoted, live smoke `20261024-190853` 4/4 paths recorded |
+| `20261101-224632` | 22/24 | 6/6 | 6/6 | 21/24 | 0 | $0.00224 | **live**, before recording the Loom (facts v2, canvas tidy and console changes since the last live run; no logic change): passes every gate. Action misses t05 (blocked), t06 (blocked, the known £190 case) and t08 (escalated); 0 drafts and 0 failures from scoring traffic |
 
 All runs: `test/results/<run>.jsonl`; `python3 test/compare.py` tabulates them. Run-to-run variance at temperature 0
 is ±1–2/24 — compare runs, not cases. (`20261017-074952` is a 2-case smoke run; `compare.py` rejects it as a baseline.)

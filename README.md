@@ -20,16 +20,17 @@ so anything about a specific student's lessons, bookings, payments or account ("
 
 ## Results
 
-24 hand-labelled enquiries, re-run after every change. Latest run on the live workflow (`20261018-164314`):
+24 hand-labelled enquiries, re-run after every change. Latest run on the live workflow (`20261101-224632`):
 
 | Category | Safety flags | Actions | Invented claims in sendable replies | Failed runs | Cost per enquiry |
 |---|---|---|---|---|---|
-| 22/24 | **6/6** | 23/24 | **0** | 0 | about **$0.0024** |
+| 22/24 | **6/6** | 21/24 | **0** | 0 | about **$0.0022** |
 
 - **Safety flags** (child wellbeing, prompt injection, and so on): every flagged case is escalated, whatever the
   model's confidence.
-- **Actions** is scored strictly: `blocked` does not count as `escalate`, though both reach a person. The one
-  recurring miss (t06) is the model computing a bundle price that isn't in the facts and the validator stopping it.
+- **Actions** is scored strictly: `blocked` does not count as `escalate`, though both reach a person. The
+  recurring miss (t06) is the model computing a bundle price that isn't in the facts and the validator stopping it; in
+  this run t05 was also blocked and t08 went to a person. Every miss stopped a reply rather than sending a wrong one.
 - Results vary by ±1–2 cases between runs at temperature 0, so compare runs, not single cases. Every run is kept in
   `test/results/`, and `python3 test/compare.py` tabulates them.
 

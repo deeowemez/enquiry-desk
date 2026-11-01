@@ -35,7 +35,7 @@ export function App() {
   return (
     <div className="app">
       <aside className="side">
-        <div className="brand">Enquiry Desk<small>Meridian Tutors</small></div>
+        <div className="brand">Meridian Tutors<small>Enquiry Desk</small></div>
         <div style={{ height: 14 }} />
         <nav aria-label="Main">
           {NAV.map(n => n.soon

@@ -47,6 +47,7 @@ export interface EnquiryDetail {
   sent: boolean;
   stages: Stage[];
   reviewUrl: string | null;       // the private review page; the token never leaves the server except inside this link
+  gmailUrl: string | null;        // the email's thread in Gmail (email enquiries only); the draft is in that thread
 }
 
 export interface Blocked {

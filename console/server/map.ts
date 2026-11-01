@@ -33,3 +33,12 @@ export const ROW_COLS = `d.id, d.received_at, d.status, d.category, d.action, d.
   d.review_status, d.is_test, d.block_kinds, d.cost_usd,
   ${`case when d.status = 'failed' then 'failed' when d.status = 'received' then 'in_progress' else coalesce(d.action, 'in_progress') end`} as outcome,
   extract(epoch from now() - d.received_at) / 3600 as waiting_hours`;
+
+// The business mailbox, so the link opens the right Google account when several are signed in (optional; otherwise the first account).
+const GMAIL_ACCOUNT = process.env.GMAIL_ACCOUNT ?? '';
+
+/** A link to the email's thread in Gmail. Thread ids from Gmail's API are hex, and only those are accepted. */
+export function gmailUrl(threadId: string | null | undefined, account = GMAIL_ACCOUNT): string | null {
+  if (!threadId || !/^[0-9a-f]{1,32}$/i.test(threadId)) return null;
+  return `https://mail.google.com/mail/${account ? `?authuser=${encodeURIComponent(account)}` : 'u/0/'}#all/${threadId}`;
+}

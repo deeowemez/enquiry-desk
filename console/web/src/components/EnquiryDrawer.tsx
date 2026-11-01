@@ -74,6 +74,7 @@ function Detail({ d }: { d: EnquiryDetail }) {
       {showCheck && <div className="card"><h3>Re-check on staging <Hint text="Runs this enquiry again with the facts staging serves now. Nothing is sent to anyone." /></h3>{start.error && <div className="err" role="alert">{start.error.message}</div>}<JobPanel job={job.data} kind="impact" /></div>}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 'auto' }}>
         {d.reviewUrl ? <a className="btn" href={d.reviewUrl} target="_blank" rel="noopener noreferrer">Open review page<ExternalLink size={14} aria-hidden /></a> : <span className="btn" aria-disabled="true">Open review page<ExternalLink size={14} aria-hidden /></span>}
+        {d.gmailUrl && <a className="btn alt" href={d.gmailUrl} target="_blank" rel="noopener noreferrer">Open in Gmail<ExternalLink size={14} aria-hidden /></a>}
         <button className="btn alt" disabled={start.isPending || job.data?.status === 'running'} onClick={() => { setShowCheck(true); start.mutate({ ids: [d.row.id] }); }}>Re-check on staging</button>
         <button className="btn alt" onClick={() => navigator.clipboard?.writeText(d.row.id)}><Copy size={14} aria-hidden />Copy ID</button>
         <span className="total">Total cost <b>{money(total || r.costUsd)}</b></span>

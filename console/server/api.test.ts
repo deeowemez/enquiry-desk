@@ -44,6 +44,14 @@ describe('what leaves the API', () => {
     assert.match(d.reviewUrl ?? '', /\/webhook\/review\?id=[0-9a-f-]{36}&t=[0-9a-f]+/);
     assert.ok(!('review_token' in d));
   });
+  it('email enquiries link to their Gmail thread; nothing else does', async () => {
+    const list = JSON.parse((await get(dev, '/api/enquiries?pageSize=50')).body);
+    for (const r of list.rows) {
+      const d = JSON.parse((await get(dev, `/api/enquiries/${r.id}`)).body);
+      assert.ok(d.gmailUrl === null || /^https:\/\/mail\.google\.com\/mail\/(u\/0\/|\?authuser=[^#]+)#all\/[0-9a-f]+$/.test(d.gmailUrl), d.gmailUrl);
+      assert.ok(!('gmail_thread_id' in d));
+    }
+  });
   it('responses carry security headers', async () => {
     const r = await get(dev, '/api/overview');
     assert.equal(r.headers['referrer-policy'], 'no-referrer'); assert.equal(r.headers['x-content-type-options'], 'nosniff'); assert.equal(r.headers['cache-control'], 'no-store');

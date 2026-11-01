@@ -4,7 +4,7 @@ import type { Blocked, Cost, EnquiryDetail, EnquiryPage, Health, Outcome, Overvi
 import { blockLabel, reasonFor, STAGE_LABEL, topicLabel } from '../shared/labels.js';
 import { rows } from './db.js';
 import { BASE_WHERE, OUTCOME_SQL, rangeQuery } from './filters.js';
-import { type DetailRecord, ROW_COLS, toRow } from './map.js';
+import { type DetailRecord, gmailUrl, ROW_COLS, toRow } from './map.js';
 
 const REVIEW_BASE = process.env.REVIEW_BASE_URL ?? '';
 
@@ -99,8 +99,8 @@ export async function routes(app: FastifyInstance) {
 
   app.get('/api/enquiries/:id', async (req, reply): Promise<EnquiryDetail | undefined> => {
     const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
-    const [d] = await rows<DetailRecord & { review_token: string | null; has_draft: boolean; sent: boolean }>(
-      `select ${ROW_COLS}, d.review_token, d.has_draft, d.sent from stats_enquiry_detail d where d.id = $1`, [id]);
+    const [d] = await rows<DetailRecord & { review_token: string | null; has_draft: boolean; sent: boolean; gmail_thread_id: string | null }>(
+      `select ${ROW_COLS}, d.review_token, d.has_draft, d.sent, d.gmail_thread_id from stats_enquiry_detail d where d.id = $1`, [id]);
     if (!d) { reply.code(404).send({ error: 'Not found' }); return; }
     const stages = await rows<{ stage: string; status: string; attempt: number; model: string | null; cost_usd: string | null; duration_ms: number | null; error_kind: string | null }>(
       `select stage, status, attempt, model, cost_usd, duration_ms, error_kind from stats_run_stage where enquiry_id = $1
@@ -112,6 +112,7 @@ export async function routes(app: FastifyInstance) {
       missingSlots: d.missing_slots ?? [], blockKinds: d.block_kinds ?? [], hasDraft: d.has_draft, sent: d.sent,
       stages: stages.map((s): Stage => ({ stage: s.stage, status: s.status, attempt: s.attempt, model: s.model, costUsd: Number(s.cost_usd ?? 0), durationMs: s.duration_ms, errorKind: s.error_kind })),
       reviewUrl: d.review_token && REVIEW_BASE ? `${REVIEW_BASE}?id=${d.id}&t=${d.review_token}` : null,
+      gmailUrl: gmailUrl(d.gmail_thread_id),
     };
   });
 

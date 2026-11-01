@@ -67,7 +67,7 @@ docker exec -i <postgres> psql -U <user> -d <db> -v facts_pw="'..'" -v staging_p
 
 # 2. the app
 cd console
-cp .env.example .env            # the four passwords, REVIEW_BASE_URL (the live review page)
+cp .env.example .env            # the four passwords, REVIEW_BASE_URL (the live review page), optional GMAIL_ACCOUNT (the mailbox, for Open in Gmail)
 docker compose up -d --build    # listens on 127.0.0.1:3100
 tailscale serve --bg --https=8444 http://127.0.0.1:3100
 ```

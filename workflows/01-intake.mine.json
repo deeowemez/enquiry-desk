@@ -17,8 +17,8 @@
         0
       ],
       "notesInFlow": true,
-      "notes": "POST /enquiry. Answers via Respond nodes: 400 bad email, 202 received (+ id) once saved, 200 duplicate",
-      "webhookId": "b854dd39-12ea-41d3-be84-6a0cfd74b0c2"
+      "webhookId": "b854dd39-12ea-41d3-be84-6a0cfd74b0c2",
+      "notes": "POST /enquiry. Answers via Respond nodes: 400 bad email, 202 received (+ id) once saved, 200 duplicate"
     },
     {
       "parameters": {
@@ -44,7 +44,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1792,
+        2016,
         0
       ],
       "notesInFlow": true,
@@ -59,8 +59,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        0,
-        592
+        16,
+        736
       ],
       "notesInFlow": true,
       "notes": "Builds the Bedrock Converse payload. Schema + instructions live here. Forced tool call = structured JSON"
@@ -83,8 +83,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        224,
-        592
+        240,
+        736
       ],
       "notesInFlow": true,
       "retryOnFail": true,
@@ -107,8 +107,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        448,
-        592
+        464,
+        736
       ],
       "notesInFlow": true,
       "notes": "Reads the tool call + tokens; cost from `config` prices. On PARSE FAILED, the summary shows stopReason + response keys"
@@ -122,8 +122,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1344,
-        992
+        1360,
+        928
       ],
       "notesInFlow": true,
       "notes": "Only this category's facts. Smaller prompt, cheaper, and 'grounded on' means something"
@@ -137,8 +137,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1568,
-        992
+        1584,
+        928
       ],
       "notesInFlow": true,
       "notes": "Converse payload with forced tool write_reply: the reply AND the second gate (answerable?) come back together"
@@ -161,8 +161,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1792,
-        992
+        1808,
+        928
       ],
       "notesInFlow": true,
       "retryOnFail": true,
@@ -186,16 +186,16 @@
       "typeVersion": 2,
       "position": [
         0,
-        2096
+        1632
       ],
       "notesInFlow": true,
       "notes": "All three branches land here. Flatten to one DB row; cost = classify + draft (if any)"
     },
     {
       "parameters": {
-        "content": "## Enquiry Desk — what this does\n\nA customer enquiry arrives. It is **classified**, answered **only from a fact table it cannot\ndeviate from**, and recorded — with cost tracked per enquiry.\n\n**The business problem.** Meridian Tutors (fictional) is staffed from the UK, 09:00–18:00 UTC.\nIts customers are in Hong Kong, Singapore and Malaysia — UTC+8. Those UK hours are 17:00–02:00\nlocal, so **the entire Asian business day is unstaffed.** A parent asking a question at 10am\nlocal waits seven hours, while emailing two competitors.\n\n**The flow**\n\n`form → envelope → save (202) → classify → derive slots → route → draft / clarify → answerable? → verify → validate → record → review` · failures → `01 Enquiry Desk - errors`\n\n**The design decision worth defending:** grounding comes from a **structured fact table, not RAG**.\nIt is auditable, cheaper, and it cannot invent a price. A tutoring company can survive a slow\nreply; it cannot survive quoting a discount that does not exist.\n\n**Cost:** ~$0.0023 per enquiry on Amazon Nova 2 Lite (Bedrock), at AWS's real per-token prices.\nA model per stage and the price table live in the `config` node. Measured over 24 test cases, not estimated.\n\n⚠️ **Sessions 1–4 done** — see the red note for what is still missing.",
-        "height": 520,
-        "width": 1140,
+        "content": "## Enquiry Desk: what this does\n\nA customer enquiry arrives by **email** (the Gmail adapter) or **form**. It is classified, answered **only from the business's fact table**, every claim is checked, and the result is recorded with its cost. Replies become **Gmail drafts**: a person always presses Send.\n\n**The business problem.** Meridian Tutors (fictional) is staffed from the UK, 09:00–18:00 UTC, but its customers are in Hong Kong, Singapore and Malaysia (UTC+8). Those UK hours are 17:00–02:00 local, so most enquiries arrive while the office is closed.\n\n**The flow**\n\n`email / form → envelope → save (202) → load facts → classify → route → draft or clarify → answerable? → verify → validate → booking link → record → review or Gmail draft`\n\nFailures go to `01 Enquiry Desk - errors`.\n\n**Design choice:** grounding comes from a **structured fact table, not RAG**: code can check every price and link against it. The facts live in Postgres (`fact_set`) and change only through the staff console, behind the 24-case test.\n\n**Cost:** about $0.0024 per enquiry on Amazon Nova 2 Lite (Bedrock), measured over 24 test cases. The model per stage and the price table are in `config`.",
+        "height": 712,
+        "width": 564,
         "color": 7
       },
       "id": "c078c55a-50b4-4f47-90f9-559359684ab5",
@@ -203,15 +203,15 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -80,
-        -720
+        -704,
+        -160
       ]
     },
     {
       "parameters": {
-        "content": "### ① INTAKE → ENVELOPE\nNormalise first, then **write first**: the enquiry is in Postgres before any model call, so a failure can't lose it. 400 for bad input, 200 for duplicates, 202 + id once saved.",
-        "height": 480,
-        "width": 3620,
+        "content": "### ① INTAKE → ENVELOPE\nNormalise first, then **write first**: the enquiry is in Postgres before any model call, so a failure can't lose it. 400 for bad input, 200 for duplicates, 202 + id once saved. Then `config` and `load facts` (the published fact set from the database).",
+        "height": 500,
+        "width": 3840,
         "color": 5
       },
       "id": "dfd3f5d2-edf3-463e-a237-9643e3d7ff5e",
@@ -225,9 +225,9 @@
     },
     {
       "parameters": {
-        "content": "### ② UNDERSTAND → ROUTE\nCheap model, strict schema (forced tool). It **extracts** category, details and safety flags; code **decides** what's missing (`derive missing slots`) and where it goes (`route`: flag → sensitive → vague → missing → auto_send). Confidence is recorded, never routed on.",
-        "height": 340,
-        "width": 3620,
+        "content": "### ② UNDERSTAND → ROUTE\nStrict schema (forced tool call). The model **extracts** category, details and safety flags; code **decides** what's missing (`derive missing slots`) and where it goes (`route`: flag → sensitive → vague → missing → auto_send). Confidence is recorded, never routed on.",
+        "height": 1020,
+        "width": 1110,
         "color": 5
       },
       "id": "c7740d6c-95b3-40ba-a67d-61e84691880c",
@@ -236,14 +236,14 @@
       "typeVersion": 1,
       "position": [
         -80,
-        432
+        400
       ]
     },
     {
       "parameters": {
-        "content": "### ③ WRITE & CHECK\n**auto_send:** only this category's facts → draft → *answerable?* → a second model **verifies** every claim → code **validates** numbers + availability. **clarify:** code picks the one question, the model phrases it. **escalate:** no AI draft — a human writes it.",
-        "height": 1044,
-        "width": 3620,
+        "content": "### ③ WRITE & CHECK\n**auto_send:** only this topic's facts → draft → *answerable?* → a second model **verifies** every claim → code **validates** prices, dates, times, links and availability → `add booking link` puts the Cal.com link from the facts on trial bookings. **clarify:** code picks the one question, the model phrases it. **escalate:** no AI draft; a person handles it.",
+        "height": 1020,
+        "width": 2700,
         "color": 5
       },
       "id": "b5b6a981-a5f8-4846-a9e4-b443b842fba9",
@@ -251,15 +251,15 @@
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -80,
-        832
+        1072,
+        400
       ]
     },
     {
       "parameters": {
-        "content": "### ④ RECORD\n`record results`, one transaction: enquiry (status → processed), `run_log` (cost + model per stage), `reply` (blocked ones with the reason). Nothing is sent. By design.",
-        "height": 580,
-        "width": 3620,
+        "content": "### ④ RECORD → REVIEW OR DRAFT\n`record results`, one transaction: enquiry (status → processed), `run_log` (cost + model per stage), `reply`. **Escalated or blocked:** a review link (Telegram in production, no customer data) to the private review page. **Cleared or clarify:** a Gmail draft, in the customer's thread only after `thread check` confirms the sender. Scoring traffic (`test+`) gets no alert and no draft. Nothing is sent automatically.",
+        "height": 640,
+        "width": 3840,
         "color": 5
       },
       "id": "3dea2d09-5195-49a8-9d9a-eba22e4fb379",
@@ -268,23 +268,23 @@
       "typeVersion": 1,
       "position": [
         -80,
-        1936
+        1472
       ]
     },
     {
       "parameters": {
-        "content": "## ⚠️ Not finished — nothing is sent yet\n\n- **In:** write-first intake, routing, the second gate, one-question clarify, a claim validator, a **failure path** (any production failure marks the row `failed` (dead letter), logs it and sends a Telegram alert; `test/replay.py` re-runs failed enquiries) and **human review**: escalated and blocked enquiries send a Telegram \"needs review\" link (no customer data) to a private review page where a person approves the draft or takes over.\n- **Measured:** 24 labelled cases, `test/score.py`: category 22/24, safety flags 6/6, 0 invented claims reach a reply. t06's £190 bundle is **blocked**.\n- **Claims:** numbers by regex, availability by code, every other factual statement by a **second model** (`verify`) that must quote its evidence. It caught a real error: a draft putting GCSE Maths on Saturdays. Residual risk: the verifier is a model.\n- **Nothing is sent.** Approved replies are stored with `approved_at`; `sent_at` stays empty.\n\n**Next:** a real outbound channel (an approved reply becomes a draft in the business inbox).",
+        "content": "## Status and limits\n\n- **Live:** email in (Gmail adapter, Primary inbox), routing, the second gate, one-question clarify, claim checks, the booking link added by code, record in one transaction, a failure path with replay, human review, and Gmail drafts in the customer's own thread after `thread check`.\n- **Measured** (live run `20261018-164314`, 24 labelled cases): category 22/24, safety flags 6/6, actions 23/24, **0 invented claims** in a sendable reply, about $0.0024 each. t06's £190 bundle is **blocked** every run.\n- **Changes:** staging first (own database), then `test/staging.py promote` by a person. Facts change through the console's draft, test and publish steps.\n- **Limits:** synthetic data and a test-only mailbox; the verifier is itself a model; account questions (one student's lessons or bookings) reach a person only when the drafter reports it can't answer; **nothing is sent automatically**.",
         "height": 520,
-        "width": 1160,
-        "color": 3
+        "width": 552,
+        "color": 4
       },
       "id": "935ffb92-b2b3-4502-b170-ae9b60e961ac",
       "name": "Note 9626",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        1120,
-        -720
+        -688,
+        592
       ]
     },
     {
@@ -358,8 +358,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        672,
-        592
+        688,
+        736
       ],
       "notesInFlow": true,
       "notes": "Model says what the customer SAID; this rule table decides what's MISSING. Testable, no model judgement"
@@ -479,8 +479,8 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        896,
-        544
+        912,
+        656
       ],
       "notesInFlow": true,
       "notes": "First match wins. Flags above everything: a flag at 0.99 confidence still escalates. Confidence is NOT used"
@@ -505,8 +505,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1120,
-        1520
+        3376,
+        608
       ],
       "notesInFlow": true,
       "notes": "No AI draft: a human writes this one"
@@ -531,8 +531,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1120,
-        1344
+        1136,
+        736
       ],
       "notesInFlow": true,
       "notes": "Missing details or too vague -> a one-question reply (code picks what to ask)"
@@ -557,8 +557,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1120,
-        992
+        1136,
+        928
       ],
       "notesInFlow": true,
       "notes": "Provisional: the second gate (can <facts> answer it?) can still escalate. Nothing is sent yet"
@@ -572,8 +572,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2016,
-        992
+        2032,
+        928
       ],
       "notesInFlow": true,
       "notes": "Reads write_reply {reply, answerable, unanswered}. No tool call = not answerable (a human looks)"
@@ -608,8 +608,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2240,
-        992
+        2256,
+        928
       ],
       "notesInFlow": true,
       "notes": "Second gate. False = the facts can't answer it, or a person must act -> escalate"
@@ -646,8 +646,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        2464,
-        1520
+        2480,
+        1216
       ],
       "notesInFlow": true,
       "notes": "Draft kept for the human, stored as blocked with the reason"
@@ -661,8 +661,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2464,
-        1344
+        2480,
+        736
       ],
       "notesInFlow": true,
       "notes": "WHAT to ask comes from code (missing_slots). The model only phrases it, in their language"
@@ -685,8 +685,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2688,
-        1344
+        2704,
+        736
       ],
       "notesInFlow": true,
       "retryOnFail": true,
@@ -709,8 +709,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2912,
-        1344
+        2928,
+        736
       ],
       "notesInFlow": true,
       "notes": "Exactly one question, checked in code. Otherwise a fixed template is used"
@@ -724,8 +724,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3136,
-        992
+        3152,
+        928
       ],
       "notesInFlow": true,
       "notes": "Numbers by regex, availability by code, free-text claims by the verifier. Any problem -> blocked"
@@ -908,8 +908,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2464,
-        992
+        2480,
+        928
       ],
       "notesInFlow": true,
       "notes": "Claim check: a SECOND model lists every factual statement and whether <facts> support it"
@@ -932,8 +932,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2688,
-        992
+        2704,
+        928
       ],
       "notesInFlow": true,
       "retryOnFail": true,
@@ -956,8 +956,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2912,
-        992
+        2928,
+        928
       ],
       "notesInFlow": true,
       "notes": "Any claim not supported === true -> a claim problem (no result = problem: a human looks)"
@@ -992,8 +992,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        896,
-        2096
+        448,
+        1632
       ],
       "notesInFlow": true,
       "notes": "escalate or blocked -> a person reviews it. auto_send and clarify don't"
@@ -1011,8 +1011,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1120,
-        2096
+        672,
+        1632
       ],
       "notesInFlow": true,
       "credentials": {
@@ -1054,18 +1054,18 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        1568,
-        2096
+        1120,
+        1632
       ],
       "notesInFlow": true,
+      "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad",
       "credentials": {
         "telegramApi": {
           "id": "f0NSkRcTr0rBgguW",
           "name": "Telegram - alerts bot"
         }
       },
-      "notes": "Category + action + Open review link. NO customer data in Telegram. Link works on the tailnet only",
-      "webhookId": "e94edd72-a2d7-45c4-8059-60b665efafad"
+      "notes": "Category + action + Open review link. NO customer data in Telegram. Link works on the tailnet only"
     },
     {
       "parameters": {
@@ -1097,8 +1097,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1344,
-        2096
+        896,
+        1632
       ],
       "notesInFlow": true,
       "notes": "scoring traffic (enquiry.is_test) still gets a review, but no Telegram message - the test suite must not page anyone"
@@ -1110,8 +1110,8 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        3360,
-        1696
+        3600,
+        1216
       ],
       "notesInFlow": true,
       "notes": "Join point: every branch meets here, one line into ④. Passes items through unchanged"
@@ -1146,8 +1146,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1120,
-        2304
+        672,
+        1936
       ],
       "notesInFlow": true,
       "notes": "Cleared (auto_send) and clarify replies get a Gmail DRAFT too. Not blocked, has text, and not scoring traffic (enquiry.is_test) so test runs don't fill the mailbox"
@@ -1158,8 +1158,8 @@
         "subject": "={{ 'Re: ' + (($('prepare row').first().json.subject || '').trim() || 'your enquiry to Meridian Tutors') }}",
         "message": "={{ $('prepare row').first().json.draft_reply }}",
         "options": {
-          "sendTo": "={{ $('prepare row').first().json.from_email }}",
-          "threadId": "={{ $('thread check').isExecuted ? $('thread check').first().json.thread_id : '' }}"
+          "threadId": "={{ $('thread check').isExecuted ? $('thread check').first().json.thread_id : '' }}",
+          "sendTo": "={{ $('prepare row').first().json.from_email }}"
         }
       },
       "id": "dee71577-fd57-4110-9cd5-4a0dceee273f",
@@ -1167,10 +1167,11 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        2016,
-        2304
+        1568,
+        1936
       ],
       "notesInFlow": true,
+      "webhookId": "8c98dac3-2ade-4a78-b9d8-08a131c2e60e",
       "credentials": {
         "gmailOAuth2": {
           "id": "CJMeQj0HoOGHJp4E",
@@ -1178,8 +1179,7 @@
         }
       },
       "onError": "continueRegularOutput",
-      "notes": "DRAFT only, addressed to the customer. Nothing is ever sent: a person presses Send in Gmail. If Gmail fails the enquiry is unaffected (see record draft)",
-      "webhookId": "8c98dac3-2ade-4a78-b9d8-08a131c2e60e"
+      "notes": "DRAFT only, addressed to the customer. Nothing is ever sent: a person presses Send in Gmail. If Gmail fails the enquiry is unaffected (see record draft)"
     },
     {
       "parameters": {
@@ -1194,8 +1194,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        2240,
-        2304
+        1792,
+        1936
       ],
       "alwaysOutputData": true,
       "notesInFlow": true,
@@ -1208,40 +1208,30 @@
       "notes": "Records the Gmail draft id, or why there is none. sent_at is never set here"
     },
     {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select version, doc from fact_set where status = 'live' order by version desc limit 1;",
+        "options": {}
+      },
       "id": "95944c74-04c3-490b-98da-a99985b16d5c",
       "name": "load facts",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1680,
-        -176
+        1792,
+        0
       ],
+      "notesInFlow": true,
+      "alwaysOutputData": true,
       "credentials": {
         "postgres": {
           "id": "k9GMxaMtEYrelvvU",
           "name": "Postgres account"
         }
       },
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "select version, doc from fact_set where status = 'live' order by version desc limit 1;",
-        "options": {}
-      },
-      "notesInFlow": true,
-      "notes": "The fact table lives in the database (fact_set), versioned. This reads the one live version; the staging workflow reads the staging database's, production reads production's. No live row = Always Output Data still passes an empty item, so the next node runs and throws, the run fails loudly and the errors workflow takes over (the enquiry is already saved)",
-      "alwaysOutputData": true
+      "notes": "The fact table lives in the database (fact_set), versioned. This reads the one live version; the staging workflow reads the staging database's, production reads production's. No live row = Always Output Data still passes an empty item, so the next node runs and throws, the run fails loudly and the errors workflow takes over (the enquiry is already saved)"
     },
     {
-      "id": "c1dd79a6-3e6f-4c97-99f0-2037967bc15a",
-      "name": "from email?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        1344,
-        2304
-      ],
-      "notesInFlow": true,
-      "notes": "Came in by email with a Gmail message id? Then check the thread before drafting into it",
       "parameters": {
         "conditions": {
           "options": {
@@ -1265,17 +1255,34 @@
           "combinator": "and"
         },
         "options": {}
-      }
+      },
+      "id": "c1dd79a6-3e6f-4c97-99f0-2037967bc15a",
+      "name": "from email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        1936
+      ],
+      "notesInFlow": true,
+      "notes": "Came in by email with a Gmail message id? Then check the thread before drafting into it"
     },
     {
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $('prepare row').first().json.gmail_message_id }}"
+      },
       "id": "227aad79-494c-4cfc-b2c0-39f4cf9ad410",
       "name": "get original",
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        1568,
-        2144
+        1120,
+        1824
       ],
+      "alwaysOutputData": true,
+      "notesInFlow": true,
+      "webhookId": "e8b9d546-2c94-4136-9f90-749ad7ee61b7",
       "credentials": {
         "gmailOAuth2": {
           "id": "CJMeQj0HoOGHJp4E",
@@ -1283,43 +1290,35 @@
         }
       },
       "onError": "continueRegularOutput",
-      "alwaysOutputData": true,
-      "notesInFlow": true,
-      "notes": "Read the customer's message from Gmail itself (the webhook's ids are only hints)",
-      "parameters": {
-        "operation": "get",
-        "messageId": "={{ $('prepare row').first().json.gmail_message_id }}",
-        "simple": true
-      },
-      "webhookId": "e8b9d546-2c94-4136-9f90-749ad7ee61b7"
+      "notes": "Read the customer's message from Gmail itself (the webhook's ids are only hints)"
     },
     {
+      "parameters": {
+        "jsCode": "// Draft into the customer's Gmail thread only when Gmail confirms the message exists, sits in that thread and was\n// sent by the enquiry's address. Anything else (message gone, forged ids, a different sender) gives a fresh,\n// unthreaded draft: the reply still reaches the right person, it just doesn't join a thread it can't vouch for.\nconst row = $('prepare row').first().json;\nconst m = $input.first()?.json ?? {};\nconst from = String(m.From ?? m.from ?? '');\nconst address = (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();\nconst ok = !m.error && m.threadId === row.gmail_thread_id && address === String(row.from_email).toLowerCase();\nreturn [{ json: { thread_id: ok ? row.gmail_thread_id : '', thread_ok: ok,\n                  thread_note: ok ? 'threaded' : (m.error ? 'original not found' : 'sender or thread did not match') } }];"
+      },
       "id": "48b42f05-749a-469d-b601-eec241728952",
       "name": "thread check",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1792,
-        2144
+        1344,
+        1824
       ],
       "notesInFlow": true,
-      "notes": "Thread only if Gmail says this sender wrote that message; otherwise a fresh draft",
-      "parameters": {
-        "jsCode": "// Draft into the customer's Gmail thread only when Gmail confirms the message exists, sits in that thread and was\n// sent by the enquiry's address. Anything else (message gone, forged ids, a different sender) gives a fresh,\n// unthreaded draft: the reply still reaches the right person, it just doesn't join a thread it can't vouch for.\nconst row = $('prepare row').first().json;\nconst m = $input.first()?.json ?? {};\nconst from = String(m.From ?? m.from ?? '');\nconst address = (from.match(/<([^>]+)>/)?.[1] ?? from).trim().toLowerCase();\nconst ok = !m.error && m.threadId === row.gmail_thread_id && address === String(row.from_email).toLowerCase();\nreturn [{ json: { thread_id: ok ? row.gmail_thread_id : '', thread_ok: ok,\n                  thread_note: ok ? 'threaded' : (m.error ? 'original not found' : 'sender or thread did not match') } }];"
-      }
+      "notes": "Thread only if Gmail says this sender wrote that message; otherwise a fresh draft"
     },
     {
+      "parameters": {
+        "jsCode": "// Booking link: code, not the model, adds the one link a parent needs, taken from the fact table (booking.link).\n// Only trial bookings that cleared or got a clarifying question; never escalations or blocked replies. The link was checked\n// as a fact, so adding it after `validate claims` can't add an unchecked claim.\nconst link = $('facts').first().json.facts?.booking?.link;\nconst key = u => String(u).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n// The line goes just above the sign-off (\"Best regards,\\nMeridian Tutors\"), or at the end if there is none.\nconst SIGN_OFF = /^(?:(?:best|kind|warm|warmest|many)\\s+)?(?:regards|wishes|thanks)[,.!]?$|^(?:thank you|thanks again|(?:yours\\s+)?sincerely|cheers|best|all the best)[,.!]?$/i;\nconst withLink = (reply, line) => {\n  const paras = reply.trimEnd().split(/\\n\\s*\\n/);\n  const first = p => p.trim().split('\\n')[0].trim();\n  let at = -1;\n  if (SIGN_OFF.test(first(paras[paras.length - 1]))) at = paras.length - 1;\n  else if (paras.length > 1 && SIGN_OFF.test(first(paras[paras.length - 2])) && paras[paras.length - 1].trim().split('\\n').length <= 2) at = paras.length - 2;\n  if (at < 1) return paras.join('\\n\\n') + '\\n\\n' + line;\n  paras.splice(at, 0, line);\n  return paras.join('\\n\\n');\n};\nreturn $input.all().map(i => {\n  const p = i.json;\n  const reply = p.draft_reply ?? '';\n  const wanted = !!link && p.classification?.category === 'trial_booking' && ['auto_send', 'clarify'].includes(p.action)\n    && !p.reply_blocked && reply.trim() !== '';\n  if (!wanted || reply.toLowerCase().includes(key(link))) return { json: { ...p, booking_link_added: false } };\n  return { json: { ...p, draft_reply: withLink(reply, 'You can book your free trial here: ' + link), booking_link_added: true } };\n});"
+      },
       "id": "a852333a-a5b2-46d0-acaf-a8cd81f30b09",
       "name": "add booking link",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3360,
-        992
-      ],
-      "parameters": {
-        "jsCode": "// Booking link: code, not the model, adds the one link a parent needs, taken from the fact table (booking.link).\n// Only trial bookings that cleared or got a clarifying question; never escalations or blocked replies. The link was checked\n// as a fact, so adding it after `validate claims` can't add an unchecked claim.\nconst link = $('facts').first().json.facts?.booking?.link;\nconst key = u => String(u).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n// The line goes just above the sign-off (\"Best regards,\\nMeridian Tutors\"), or at the end if there is none.\nconst SIGN_OFF = /^(?:(?:best|kind|warm|warmest|many)\\s+)?(?:regards|wishes|thanks)[,.!]?$|^(?:thank you|thanks again|(?:yours\\s+)?sincerely|cheers|best|all the best)[,.!]?$/i;\nconst withLink = (reply, line) => {\n  const paras = reply.trimEnd().split(/\\n\\s*\\n/);\n  const first = p => p.trim().split('\\n')[0].trim();\n  let at = -1;\n  if (SIGN_OFF.test(first(paras[paras.length - 1]))) at = paras.length - 1;\n  else if (paras.length > 1 && SIGN_OFF.test(first(paras[paras.length - 2])) && paras[paras.length - 1].trim().split('\\n').length <= 2) at = paras.length - 2;\n  if (at < 1) return paras.join('\\n\\n') + '\\n\\n' + line;\n  paras.splice(at, 0, line);\n  return paras.join('\\n\\n');\n};\nreturn $input.all().map(i => {\n  const p = i.json;\n  const reply = p.draft_reply ?? '';\n  const wanted = !!link && p.classification?.category === 'trial_booking' && ['auto_send', 'clarify'].includes(p.action)\n    && !p.reply_blocked && reply.trim() !== '';\n  if (!wanted || reply.toLowerCase().includes(key(link))) return { json: { ...p, booking_link_added: false } };\n  return { json: { ...p, draft_reply: withLink(reply, 'You can book your free trial here: ' + link), booking_link_added: true } };\n});"
-      }
+        3376,
+        928
+      ]
     },
     {
       "parameters": {
@@ -1334,17 +1333,17 @@
       "name": "record results",
       "position": [
         224,
-        2096
+        1632
       ],
+      "notesInFlow": true,
+      "id": "76c01a0f-b640-4258-bf0c-6bdaf5a6b0c1",
       "credentials": {
         "postgres": {
           "id": "k9GMxaMtEYrelvvU",
           "name": "Postgres account"
         }
       },
-      "notesInFlow": true,
-      "notes": "One transaction: enquiry → processed, run_log (cost + model per stage), reply (if one was written). Nothing is sent",
-      "id": "76c01a0f-b640-4258-bf0c-6bdaf5a6b0c1"
+      "notes": "One transaction: enquiry → processed, run_log (cost + model per stage), reply (if one was written). Nothing is sent"
     }
   ],
   "pinData": {},

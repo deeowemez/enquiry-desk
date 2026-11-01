@@ -169,7 +169,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1344,
+        2016,
         300
       ],
       "parameters": {
@@ -182,7 +182,7 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.5,
       "position": [
-        1568,
+        2240,
         300
       ],
       "notesInFlow": true,
@@ -220,7 +220,7 @@
         "color": 4,
         "width": 1120,
         "height": 260,
-        "content": "## Enquiry Desk — human review\n\nEscalated and blocked enquiries get a Telegram message with an **Open review** link (no customer data in Telegram). The page shows the enquiry, the draft and why it needs a person, with **Approve draft** / **Take over**.\n\n- Reachable on the **tailnet only** — the phone needs Tailscale. Nothing is public.\n- Each enquiry has a random `review_token`; id + token must match. Buttons POST — opening a link changes nothing.\n- Approve sets `reply.approved_at`. **Nothing is emailed**: `sent_at` stays empty until a real outbound channel exists."
+        "content": "## Enquiry Desk: human review\n\nEscalated and blocked enquiries get an **Open review** link (Telegram in production, no customer data). The page shows the enquiry, the draft and why it needs a person, with **Approve draft** / **Take over**.\n\n- Reachable on the **tailnet only**: the phone needs Tailscale. Nothing is public.\n- Each enquiry has a random `review_token`; id and token must match. Buttons POST, so opening a link changes nothing.\n- **Approve** sets `reply.approved_at` and creates a **Gmail draft**, in the customer's own thread after `thread check` confirms the sender. A person sends it from Gmail; nothing is sent automatically."
       }
     },
     {
@@ -266,7 +266,7 @@
       "typeVersion": 2.2,
       "position": [
         1568,
-        500
+        520
       ],
       "parameters": {
         "resource": "draft",
@@ -297,7 +297,7 @@
       "typeVersion": 2.5,
       "position": [
         1792,
-        500
+        520
       ],
       "alwaysOutputData": true,
       "credentials": {
@@ -323,7 +323,7 @@
       "typeVersion": 2.2,
       "position": [
         896,
-        500
+        520
       ],
       "notesInFlow": true,
       "notes": "Came in by email with a Gmail message id? Then check the thread before drafting into it",
@@ -359,7 +359,7 @@
       "typeVersion": 2.2,
       "position": [
         1120,
-        340
+        440
       ],
       "credentials": {
         "gmailOAuth2": {
@@ -385,7 +385,7 @@
       "typeVersion": 2,
       "position": [
         1344,
-        340
+        440
       ],
       "notesInFlow": true,
       "notes": "Thread only if Gmail says this sender wrote that message; otherwise a fresh draft",
@@ -394,7 +394,7 @@
       }
     }
   ],
-  "pinData": null,
+  "pinData": {},
   "connections": {
     "review page": {
       "main": [

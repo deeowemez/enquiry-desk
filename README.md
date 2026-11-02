@@ -5,6 +5,8 @@
 An n8n workflow that answers customer enquiries for a tutoring company, **only from a table of facts**, checks every
 claim in its own reply before storing it, sends risky cases to a person, and never loses an enquiry.
 
+**▶ [Watch the 3½-minute demo](https://www.loom.com/share/dce7d29d78214df2920b3518c8e801bd)**
+
 > **Meridian Tutors is a fictional company.** Every price, lesson time, policy and enquiry in this repo is invented.
 > No real customer data appears anywhere.
 
@@ -175,4 +177,4 @@ alerts, and a Gmail OAuth2 credential for drafts.
 | `WORKFLOW.md` | Node-by-node walkthrough |
 | `STATE.md` | Technical record: results, decisions, lessons |
 
-Demo video: _to be added._
+Demo video: [watch the 3½-minute walkthrough on Loom](https://www.loom.com/share/dce7d29d78214df2920b3518c8e801bd).
